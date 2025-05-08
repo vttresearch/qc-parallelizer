@@ -1,8 +1,14 @@
 # Quantum Circuit Parallelizer
 
 A Python module for optimally combining and distributing quantum circuits. See the
-[included notebooks](./notebooks/) for examples and more information, but _very_ briefly, it works
-as follows:
+[included notebooks](./notebooks/) for examples and more information. In summary, the motivation
+for this module comes from frequent underutilization of increasingly large quantum processors. The
+module processes several independent circuits into a smaller set of wider, combined circuits, which
+it then runs on available backends in parallel. All of this happens behind the scenes, so ideally
+the user can treat the module's functionality as a parallelized drop-in replacement for Qiskit's
+`backend.run()`.
+
+Here is a brief and basic example:
 
 ```python
 # Define or load a number of circuits.
