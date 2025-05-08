@@ -1,8 +1,28 @@
 # Quantum Circuit Parallelizer
 
 A Python module for optimally combining and distributing quantum circuits. See the
-[included notebooks](./notebooks/) for examples and more information. For an operational overview,
-see the diagram below.
+[included notebooks](./notebooks/) for examples and more information, but _very_ briefly, it works
+as follows:
+
+```python
+# Define or load a number of circuits.
+from qiskit import QuantumCircuit
+parallel_circuits = [QuantumCircuit(...), QuantumCircuit(...), ...]
+
+# Define backends for circuit execution. These can be any Qiskit-compatible backend objects.
+import iqm.qiskit_iqm as iqm
+backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
+
+# Parallelize and execute.
+import qc_parallelizer as parallelizer
+job = parallelizer.execute(parallel_circuits, backends=backends)
+
+# Fetch and handle results. This plots the first circuit's result histogram, for example.
+results = job.results()
+qiskit.visualization.plot_histogram(result[0].get_counts())
+```
+
+For an operational overview, see this diagram:
 
 ![](./notebooks/parallelizer-full.drawio.png)
 
