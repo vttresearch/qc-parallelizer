@@ -1,2 +1,3 @@
-# qc-parallelizer
-A Python module for optimally combining and distributing quantum circuits
+# Quantum Circuit Parallelizer
+
+A Python module for optimally combining and distributing quantum circuits.

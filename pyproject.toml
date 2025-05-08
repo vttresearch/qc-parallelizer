@@ -1,0 +1,49 @@
+[project]
+name = "qc_parallelizer"
+dynamic = [ "version" ]
+description = "A module for optimally combining and distributing quantum circuits"
+authors = [
+    { name = "Henri Ahola", email = "henri.ahola@vtt.fi" }
+]
+readme = "README.md"
+requires-python = ">= 3.10"
+dependencies = [ "qiskit == 0.45.3" ]
+
+[project.optional-dependencies]
+tests = [ "qiskit-iqm == 13.7", "pytest", "pytest-cov" ]
+notebooks = [ "qiskit-iqm == 13.7", "ipykernel", "matplotlib", "pylatexenc" ]
+
+[build-system]
+requires = [ "setuptools>=68.0.0", "setuptools_scm[toml]>=7" ]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# See configuration details in https://github.com/pypa/setuptools_scm
+version_scheme = "no-guess-dev"
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [ "F", "E", "W", "I001", "I002" ]
+ignore = [ "E101", "W191", "F401", "F811", "E712" ]
+# F401: ignore unused imports, breaks Pytest fixtures
+# F811: ignore redefinitions, also breaks Pytest fixtures
+# E712: ignore comparisons with False
+
+[tool.ruff.format]
+indent-style = "space"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+# Pytest causes various DeprecationWarnings in Qiskit, so we ignore them
+# Warnings that original from a call in our code is treated normally, though
+# NOTE: is ignoring a good idea?
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "default::DeprecationWarning:vtt_quantumutils.*",
+    "default::PendingDeprecationWarning:vtt_quantumutils.*",
+]
