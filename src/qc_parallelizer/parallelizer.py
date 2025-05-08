@@ -1,20 +1,14 @@
-import collections
 import functools
 import itertools
 import operator
-import warnings
 
 import qiskit
-import qiskit.circuit
-import qiskit.compiler
 import qiskit.providers
-import qiskit.qobj
 import qiskit.result
-import qiskit.result.models
-import qiskit.transpiler
-from vtt_quantumutils.common import circuittools, layouts
-from vtt_quantumutils.parallelizer import packing, postprocessing
-from vtt_quantumutils.parallelizer.base import Exceptions, Types
+
+from .generic import circuittools, layouts
+from . import packing, postprocessing
+from .base import Exceptions, Types
 
 
 class ParallelJob:
@@ -143,7 +137,7 @@ class ParallelJob:
         def __getitem__(self, index):
             return [getattr(job, self.attr) for job in self.jobs][index]
 
-        def __iter__(self, index):
+        def __iter__(self):
             for job in self.jobs:
                 yield getattr(job, self.attr)
 
@@ -273,6 +267,8 @@ def describe(rearranged: dict[Types.Backend, list[qiskit.QuantumCircuit]], color
     Returns a description of parallelized circuits. The result is a nicely formatted string that
     contains a list of backends and statistics for the number of circuits per each backend. The
     formatted string contains newlines and is intended to be printed as is.
+
+    Set `color` to False to disable colored formatting.
     """
 
     class Color:

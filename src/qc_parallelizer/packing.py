@@ -1,4 +1,3 @@
-import concurrent.futures
 import functools
 import heapq
 from abc import ABC, abstractmethod
@@ -6,11 +5,11 @@ from collections import namedtuple
 from typing import Any
 
 import qiskit
-import qiskit.providers
 import qiskit.transpiler
-from vtt_quantumutils.common import backendtools, circuittools, layouts
-from vtt_quantumutils.parallelizer import transpiling
-from vtt_quantumutils.parallelizer.base import Exceptions, Types
+
+from .generic import backendtools, circuittools, layouts
+from . import transpiling
+from .base import Exceptions, Types
 
 
 class CircuitBin:

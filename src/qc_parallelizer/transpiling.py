@@ -10,8 +10,9 @@ import qiskit.circuit.equivalence_library as equivalence_library
 # too damn long :D
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 import qiskit.transpiler.preset_passmanagers
-from vtt_quantumutils.common import circuittools, layouts
-from vtt_quantumutils.parallelizer.base import Exceptions, Types
+
+from .generic import circuittools, layouts
+from .base import Exceptions, Types
 
 
 class StashLayout(qiskit.transpiler.basepasses.AnalysisPass):

@@ -2,7 +2,7 @@ import collections
 import itertools
 
 import qiskit
-from vtt_quantumutils.parallelizer.base import Exceptions, Types
+from .base import Exceptions, Types
 
 
 def split_results(result: Types.Result):
