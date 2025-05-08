@@ -6,9 +6,9 @@ import qiskit
 import qiskit.providers
 import qiskit.result
 
-from .generic import circuittools, layouts
 from . import packing, postprocessing
 from .base import Exceptions, Types
+from .generic import circuittools, layouts
 
 
 class ParallelJob:
@@ -64,10 +64,10 @@ class ParallelJob:
             if self.jobs is None:
                 return None
             return len(self.jobs)
-    
+
         def for_circuit(
             self,
-            circuit: qiskit.QuantumCircuit
+            circuit: qiskit.QuantumCircuit,
         ) -> tuple[qiskit.providers.Job, Types.Backend]:
             for backend, host_circuit, job in self.jobs:
                 for hosted_circuit in host_circuit.metadata["_hosted_circuits"]:

@@ -14,7 +14,7 @@ class Types:
 
 class Exceptions:
     class MissingParameter(Exception):
-        """ A required parameter or part of a parameter is missing. """
+        """A required parameter or part of a parameter is missing."""
 
     class MissingInformation(Exception):
         """
@@ -23,10 +23,10 @@ class Exceptions:
         """
 
     class ParameterConflict(Exception):
-        """ Two or more passed parameters or parts of parameters are in mutual conflict. """
+        """Two or more passed parameters or parts of parameters are in mutual conflict."""
 
     class CircuitBackendCompatibility(Exception):
-        """ One or more given circuits cannot be executed on any given backends. """
+        """One or more given circuits cannot be executed on any given backends."""
 
     class InvalidLayout(Exception):
         """

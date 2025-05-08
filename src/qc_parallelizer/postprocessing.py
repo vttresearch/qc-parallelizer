@@ -2,6 +2,7 @@ import collections
 import itertools
 
 import qiskit
+
 from .base import Exceptions, Types
 
 

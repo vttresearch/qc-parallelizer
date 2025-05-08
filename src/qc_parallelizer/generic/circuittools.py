@@ -2,6 +2,7 @@ import warnings
 from typing import Any
 
 import qiskit
+
 from . import layouts
 
 
@@ -228,7 +229,7 @@ def combine_for_backend(
 
         for operation, qubits, clbits in subcircuit.data:
             if any(qubit not in qreg_mapping for qubit in qubits):
-                print(f"oh noes! instruction '{operation.name}' skipped") # TODO: warn
+                print(f"oh noes! instruction '{operation.name}' skipped")  # TODO: warn
                 continue
             host_circuit.append(
                 operation,

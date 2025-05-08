@@ -3,8 +3,8 @@ import warnings
 import pytest
 import qiskit
 import qiskit.transpiler
-from qc_parallelizer.generic import backendtools, circuittools, generic
 from qc_parallelizer import parallelizer, transpiling
+from qc_parallelizer.generic import backendtools, circuittools, generic
 
 from .utils import build_circuit_list, fake_20qb_backend
 

@@ -16,8 +16,8 @@ import sys
 import tempfile
 import time
 
-from utils import build_circuit_list, fake_20qb_backend
 from qc_parallelizer import parallelizer
+from utils import build_circuit_list, fake_20qb_backend
 
 # Enable/disable ANSI colors depending on output type (or user preference)
 if os.isatty(0) and "--no-color" not in sys.argv:

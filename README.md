@@ -1,7 +1,10 @@
 # Quantum Circuit Parallelizer
 
 A Python module for optimally combining and distributing quantum circuits. See the
-[included notebooks](./notebooks/) for examples and more information.
+[included notebooks](./notebooks/) for examples and more information. For an operational overview,
+see the diagram below.
+
+![](./notebooks/parallelizer-full.drawio.png)
 
 ## Setup
 

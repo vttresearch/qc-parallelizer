@@ -1,18 +1,18 @@
 import qiskit
+import qiskit.circuit.equivalence_library as equivalence_library
 import qiskit.dagcircuit
 import qiskit.providers
 import qiskit.transpiler
 import qiskit.transpiler.passes
+import qiskit.transpiler.preset_passmanagers
 import qiskit.transpiler.preset_passmanagers.common
-import qiskit.circuit.equivalence_library as equivalence_library
 
 # One name is exceptionally imported directly into globals since the fully qualified name is just
 # too damn long :D
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
-import qiskit.transpiler.preset_passmanagers
 
-from .generic import circuittools, layouts
 from .base import Exceptions, Types
+from .generic import circuittools, layouts
 
 
 class StashLayout(qiskit.transpiler.basepasses.AnalysisPass):
