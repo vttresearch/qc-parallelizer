@@ -1,5 +1,7 @@
 # Quantum Circuit Parallelizer
 
+## What is this?
+
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and more information. In summary, the motivation
 for this module comes from frequent underutilization of increasingly large quantum processors. The
@@ -7,6 +9,18 @@ module processes several independent circuits into a smaller set of wider, combi
 it then runs on available backends in parallel. All of this happens behind the scenes, so ideally
 the user can treat the module's functionality as a parallelized drop-in replacement for Qiskit's
 `backend.run()`.
+
+For an operational overview, see [this diagram](./notebooks/parallelizer-full.drawio.png).
+
+## Installation
+
+The package is on [PyPI](https://pypi.org/project/qc-parallelizer) and can be installed with `pip`:
+
+```bash
+pip install qc_parallelizer
+```
+
+## Example
 
 Here is a brief and basic example:
 
@@ -35,10 +49,6 @@ print("Job IDs:")
 for job_id in job.job_id():
     print(f" - {job_id}")
 ```
-
-For an operational overview, see this diagram:
-
-![](./notebooks/parallelizer-full.drawio.png)
 
 ## Development setup
 
