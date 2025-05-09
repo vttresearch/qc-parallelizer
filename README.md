@@ -40,18 +40,23 @@ For an operational overview, see this diagram:
 
 ![](./notebooks/parallelizer-full.drawio.png)
 
-## Setup
+## Development setup
 
-For the following commands, a virtual environment or equivalent isolation is recommended.
-
-The package can be installed from a local copy of the directory by running
-
+For the following commands, a virtual environment or equivalent isolation is recommended. This can
+be done with Conda, for example, with
 ```bash
-pip install .
+conda create --name parallelizer python=3.10 pip # note the Python version!
+conda activate parallelizer
 ```
 
-from the repository root. However, if you wish to run tests or the provided notebook(s), you must
-install additional dependencies with
+The package can then be installed from a local copy of the directory by running
+
+```bash
+pip install -e .
+```
+
+from the repository root. If you additionally wish to run tests or the provided notebook(s), you
+can install dependencies for those with
 
 ```bash
 pip install .[tests]
@@ -61,7 +66,7 @@ pip install .[notebooks]
 
 ## Testing
 
-Running all tests is as simple as running
+Running all tests is as simple as installing the required dependencie (`.[tests]`) and running
 
 ```bash
 pytest
