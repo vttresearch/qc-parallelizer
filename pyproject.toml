@@ -1,5 +1,5 @@
 [project]
-name = "qc_parallelizer"
+name = "qc-parallelizer"
 dynamic = [ "version" ]
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
