@@ -13,19 +13,27 @@ Here is a brief and basic example:
 ```python
 # Define or load a number of circuits.
 from qiskit import QuantumCircuit
-parallel_circuits = [QuantumCircuit(...), QuantumCircuit(...), ...]
+circuits = [QuantumCircuit(...), QuantumCircuit(...), ...]
 
-# Define backends for circuit execution. These can be any Qiskit-compatible backend objects.
+# Define backends for circuit execution. These can be any Qiskit-compatible backend objects, but
+# here we define two simulators that mimic IQM's 5-qubit Adonis architechture.
 import iqm.qiskit_iqm as iqm
 backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
 
-# Parallelize and execute.
+# Parallelize and execute. This call will
+#  1. determine how to combine the circuits and for which backends, and
+#  2. submit jobs to the backends.
 import qc_parallelizer as parallelizer
-job = parallelizer.execute(parallel_circuits, backends=backends)
+job = parallelizer.execute(circuits, backends=backends)
 
 # Fetch and handle results. This plots the first circuit's result histogram, for example.
 results = job.results()
 qiskit.visualization.plot_histogram(result[0].get_counts())
+# Information on the parallelization and underlying jobs is also available.
+print(f"On average, {job.info.avg_circuits_per_backend} circuits were placed per backend.")
+print("Job IDs:")
+for job_id in job.job_id():
+    print(f" - {job_id}")
 ```
 
 For an operational overview, see this diagram:
