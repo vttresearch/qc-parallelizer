@@ -99,4 +99,4 @@ from the repository root. Additionally, there is a benchmarking script in the `t
 
 ## Authors
 
-- **Henri Ahola** <henri.ahola@vtt.fi>
+- **Henri Ahola** &lt;firstname.lastname<area>@vtt.fi&gt;
