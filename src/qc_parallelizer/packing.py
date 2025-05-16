@@ -20,7 +20,7 @@ class CircuitBin:
 
     def __init__(self, backend: Types.Backend):
         self.backend = backend
-        self.tracked_circuits: list[tuple[qiskit.QuantumCircuit, Any]] = []
+        self.tracked_circuits: list[tuple[qiskit.QuantumCircuit, Any, layouts.QILayout]] = []
         self.phys_assignments: dict[int, tuple[int, int] | None] = {
             i: None for i in range(backend.num_qubits)
         }
@@ -86,7 +86,7 @@ class CircuitBin:
     ):
         if not self.compatible(circuit, layout):
             return False
-        self.tracked_circuits.append((circuit, metadata))
+        self.tracked_circuits.append((circuit, metadata, layout))
         for virt_index, phys_index in layout.v2p.items():
             self.phys_assignments[phys_index] = (len(self.tracked_circuits) - 1, virt_index)
         return True
@@ -94,12 +94,8 @@ class CircuitBin:
     def realize(self) -> qiskit.QuantumCircuit:
         return circuittools.combine_for_backend(self.circuits, self.backend, name=self.label)
 
-    def __getitem__(self, index) -> tuple[qiskit.QuantumCircuit, Any, dict[int, int]]:
-        return *self.tracked_circuits[index], {
-            virt_i: phys_i
-            for phys_i, (circ_i, virt_i) in self.get_defined_layout().items()
-            if circ_i == index
-        }
+    def __getitem__(self, index) -> tuple[qiskit.QuantumCircuit, Any, layouts.QILayout]:
+        return self.tracked_circuits[index]
 
     def __iter__(self):
         for i in range(self.size):
@@ -253,11 +249,11 @@ class CircuitBinManager:
         bin_heap: list[tuple[Any, CircuitBin, qiskit.QuantumCircuit, layouts.QILayout]] = []
 
         candidates = list(self.candidate_bins(circuit, initial_layout))
-        trial_params = [
+        trial_params = (
             (trial, index, circuit_bin, state.with_bin(circuit_bin))
             for index, circuit_bin in enumerate(candidates)
             for trial in range(self.packpol.num_trials)
-        ]
+        )
 
         error_bins = set()
         for trial, index, circuit_bin, bin_state in trial_params:
@@ -278,7 +274,10 @@ class CircuitBinManager:
                 if is_optimum:
                     break
 
+        # We now have a heap of circuit bins where the first item is the best option for the given
+        # circuit. So, if there are any bins in the heap...
         if len(bin_heap) > 0:
+            # Place the circuit in the first one.
             *_, circuit_bin, transpiled, transp_layout = bin_heap[0]
             assert circuit_bin.place(
                 transpiled,
@@ -286,6 +285,7 @@ class CircuitBinManager:
                 metadata,
             ), "this assertion should never fail - the packing policy is probably incoherent"
         else:
+            # Otherwise, there were no suitable bins for the circuit. Report this as an exception.
             raise Exceptions.CircuitBackendCompatibility(
                 "could not place circuit in any bin",
             )

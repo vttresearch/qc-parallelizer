@@ -199,6 +199,7 @@ def rearrange(
         layout = layouts.QILayout()
         if not isinstance(circuit, qiskit.QuantumCircuit):
             circuit, layout = circuit
+            layout = layouts.QILayout.from_layout(layout, circuit)
         return circuittools.remove_idle_qubits(circuit, layout)
 
     # Add index to circuits for restoring original order after execution

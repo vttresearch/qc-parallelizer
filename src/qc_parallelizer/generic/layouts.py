@@ -80,6 +80,7 @@ class QILayout:
                 p2v={
                     p: property_set["original_qubit_indices"][v]
                     for p, v in property_set["layout"].get_physical_bits().items()
+                    if v in property_set["original_qubit_indices"]
                 },
             )
         elif property_set["layout"] and dag is not None:
@@ -116,7 +117,11 @@ class QILayout:
 
     @property
     def size(self):
-        return len(self._v2p)
+        """
+        Returns the size of the layout, excluding blocked qubits.
+        """
+
+        return len(self.v2p)
 
     @property
     def vkeys(self):

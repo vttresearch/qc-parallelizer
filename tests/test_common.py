@@ -19,7 +19,7 @@ class TestLayouts:
         assert 0 not in layout.p2v and 2 not in layout.p2v
 
         layout.remove(virt=2)
-        assert layout.size == 2
+        assert layout.size == 0
         assert len(layout.p2v) == 0 and len(layout.v2p) == 0
 
 

@@ -108,8 +108,8 @@ def remove_idle_qubits(
         # later indices
         modified = False
         for index in sorted(idle_indices, reverse=True):
-            if index in new_layout.vkeys:
-                new_layout.remove(virt=index, decrement_keys=True)
+            if index in new_layout.pkeys:
+                new_layout.remove(phys=index, decrement_keys=True)
                 modified = True
 
         # If the layout was not modified, the new object is discarded and the old layout is returned
@@ -175,6 +175,72 @@ def get_neighbor_sets(circuit: qiskit.QuantumCircuit) -> list[set[int]]:
     return neighbors
 
 
+def map_circuit_qubits(
+    circuit: qiskit.QuantumCircuit,
+    map: dict[int, int],
+    num_qubits: int | None = None,
+    fill_missing: bool = False,
+    allow_interlace: bool = True,
+    name: str | None = None,
+):
+    """
+    Maps the given circuit's qubits, adjusting the resulting circuit's width if necessary. The given
+    mapping (`map`) is a mapping from the given circuit's qubits' indices to their new indices in
+    the resulting circuit.
+
+    If provided, `num_qubits` defines the width of the resulting circuit. If not provided, the width
+    will be inferred as the highest index (plus one) of the mapping.
+
+    If the mapping does not cover all of the given circuit's qubits, an exception is thrown.
+    Alternatively, if `fill_missing` is set to `True`, the missing qubits are assumed to map to the
+    same indices that they were in initially.
+
+    If two or more qubits map to the same index, their operations become interlaced in the result.
+    Set `allow_interlace` to `False` to throw an exception if this is detected.
+    """
+
+    if num_qubits is None:
+        num_qubits = max(map.values()) + 1
+
+    mapped_circuit = qiskit.QuantumCircuit(
+        num_qubits,
+        name=name or f"{circuit.name} (mapped)",
+        metadata=circuit.metadata,
+    )
+
+    qreg_mapping = {
+        circuit.qubits[src]: mapped_circuit.qubits[dst]
+        for src, dst in map.items()
+        if src < circuit.num_qubits
+    }
+    creg_mapping = {}
+    for old_reg in circuit.cregs:
+        new_reg = qiskit.ClassicalRegister(old_reg.size, name=old_reg.name)
+        for i in range(old_reg.size):
+            creg_mapping[old_reg[i]] = new_reg[i]
+        mapped_circuit.add_register(new_reg)
+
+    if fill_missing:
+        for qubit in circuit.qubits:
+            if qubit not in qreg_mapping:
+                qreg_mapping[qubit] = mapped_circuit.qubits[circuit.find_bit(qubit).index]
+    else:
+        for qubit in circuit.qubits:
+            assert qubit in qreg_mapping, "mapping does not cover all circuit qubits"
+
+    if not allow_interlace:
+        assert len(set(qreg_mapping.values())) == len(
+            qreg_mapping.keys(),
+        ), "two or more qubits map into the same index"
+
+    for operation, qubits, clbits in circuit.data:
+        mapped_circuit.append(
+            operation,
+            [qreg_mapping[qubit] for qubit in qubits],
+            [creg_mapping[clbit] for clbit in clbits],
+        )
+
+
 def combine_for_backend(
     circuits: list[tuple[qiskit.QuantumCircuit, Any, layouts.QILayout]],
     backend: qiskit.providers.BackendV2,
@@ -221,15 +287,16 @@ def combine_for_backend(
         qreg_indices = {
             virt_qubit: subcircuit.find_bit(virt_qubit).index for virt_qubit in subcircuit.qubits
         }
+
         qreg_mapping = {
-            virt_qubit: host_circuit.qubits[layout[qreg_indices[virt_qubit]]]
+            virt_qubit: host_circuit.qubits[layout.v2p[qreg_indices[virt_qubit]]]
             for virt_qubit in subcircuit.qubits
-            if qreg_indices[virt_qubit] in layout
         }
 
         for operation, qubits, clbits in subcircuit.data:
             if any(qubit not in qreg_mapping for qubit in qubits):
                 print(f"oh noes! instruction '{operation.name}' skipped")  # TODO: warn
+                print(qreg_mapping, qubits)
                 continue
             host_circuit.append(
                 operation,
