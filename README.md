@@ -1,5 +1,8 @@
 # Quantum Circuit Parallelizer
 
+[![python](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org)
+[![PyPI version](https://badge.fury.io/py/qc-parallelizer.svg)](https://pypi.org/project/qc-parallelizer)
+
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
