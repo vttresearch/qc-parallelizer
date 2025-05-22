@@ -3,6 +3,10 @@
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
+For an operational overview, see the diagram below.
+
+![diagram describing the module's internal operation](./notebooks/parallelizer-full.drawio.png)
+
 ## Why?
 
 Motivation for this module comes from underutilization of increasingly large quantum processors in
@@ -21,8 +25,6 @@ Instead, depending on the connectivity of the four-qubit circuit, at least nine 
 packed into a single _host circuit_ that covers as many of Q50's qubits as it can. Optionally, the
 parallelizer can also be instructed to leave "padding qubits" between packed circuits. This reduces
 crosstalk between circuits at the cost of lower packing density.
-
-For an operational overview, see [this diagram](./notebooks/parallelizer-full.drawio.png).
 
 ## Installation
 
