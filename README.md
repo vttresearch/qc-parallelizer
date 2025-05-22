@@ -43,8 +43,8 @@ Here is a brief and basic example:
 from qiskit import QuantumCircuit
 circuits = [QuantumCircuit(...), QuantumCircuit(...), ...]
 
-# Define backends for circuit execution. These can be any Qiskit-compatible backend objects, but
-# here we define two simulators that mimic IQM's 5-qubit Adonis architecture.
+# Define backends for circuit execution. These can be any Qiskit-compatible backend objects,
+# but here we define two simulators that mimic IQM's 5-qubit Adonis architecture.
 import iqm.qiskit_iqm as iqm
 backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
 
