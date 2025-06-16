@@ -1,3 +1,5 @@
+from typing import Literal
+
 import qiskit
 import qiskit.circuit
 import qiskit.providers
@@ -10,6 +12,7 @@ class Types:
     Backend = qiskit.providers.BackendV2
     Result = qiskit.result.result.Result
     Qubit = qiskit.circuit.Qubit
+    OptimizationStrategy = Literal["minimize", "softconstr", "none", None]
 
 
 class Exceptions:
@@ -22,8 +25,11 @@ class Exceptions:
         does not contain required metadata.
         """
 
-    class ParameterConflict(Exception):
-        """Two or more passed parameters or parts of parameters are in mutual conflict."""
+    class ParameterError(Exception):
+        """
+        One parameter is of the wrong type, or two or more passed parameters or parts of parameters
+        are in mutual conflict.
+        """
 
     class CircuitBackendCompatibility(Exception):
         """One or more given circuits cannot be executed on any given backends."""
@@ -33,3 +39,6 @@ class Exceptions:
         One or more given circuit layouts are not valid. This can be due to incompleteness or
         duplicate/overlapping definitions.
         """
+
+    class LayoutError(Exception):
+        """An error occurred while determining layout for a circuit."""

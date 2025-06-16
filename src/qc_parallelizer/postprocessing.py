@@ -2,6 +2,8 @@ import collections
 import itertools
 
 import qiskit
+import qiskit.qobj
+import qiskit.result.models
 
 from .base import Exceptions, Types
 
@@ -21,6 +23,9 @@ def split_results(result: Types.Result):
 
     def _generate_split_results(host_result: Types.Result):
         for experiment_result in host_result.results:
+            if not hasattr(experiment_result.data, "counts"):
+                continue
+
             # Different backends return slightly different data formats
             # TODO: expand this as necessary, or look for some method in the Result class that would
             # return the metadata format-agnostically
@@ -36,19 +41,19 @@ def split_results(result: Types.Result):
                 )
 
             try:
-                original_circuits = metadata["_hosted_circuits"]
+                original_circuits = metadata["hosted_circuits"]
                 original_clreg_sizes = [
                     list(circuit["registers"]["clbit"]["sizes"].values())
                     for circuit in original_circuits
                 ]
                 indices = [
-                    original_circuit["internal_metadata"]["index"]
-                    for original_circuit in original_circuits
+                    original_circuit["metadata"]["index"] for original_circuit in original_circuits
                 ]
             except KeyError as error:
                 raise Exceptions.MissingInformation(
-                    "parallelization metadata is not accessible and is probably missing - "
-                    "the provided results must be returned from a parallelized execution",
+                    "parallelization metadata is not accessible and is probably missing (key: "
+                    f"{error}) - the provided results must be returned from a parallelized "
+                    "execution",
                 ) from error
 
             parse_key = _determine_key_parser(experiment_result.data.counts, original_clreg_sizes)
@@ -69,7 +74,7 @@ def split_results(result: Types.Result):
                     header=qiskit.qobj.QobjExperimentHeader(
                         # Place metadata here, the "correct" place
                         # (This is where you would actually find it)
-                        metadata=original_circuit["original_metadata"],
+                        metadata=original_circuit["metadata"]["original_metadata"],
                     ),
                 )
                 yield (
@@ -86,7 +91,7 @@ def split_results(result: Types.Result):
                         qiskit.qobj.QobjHeader(
                             # Also place metadata here, the "sensible" place
                             # (This is where you would expect to find it)
-                            metadata=original_circuit["original_metadata"],
+                            metadata=original_circuit["metadata"]["original_metadata"],
                         ),
                         **host_result._metadata,
                     ),
