@@ -1,7 +1,4 @@
-import functools
 import heapq
-from abc import ABC, abstractmethod
-from collections import namedtuple
 from collections.abc import Generator, Sequence
 from typing import Any
 
@@ -9,8 +6,7 @@ import qiskit
 
 from .base import Exceptions, Types
 from .circuitbin import CircuitBin
-from .generic import backendtools, circuittools
-from .generic.layouts import CircuitWithLayout, IndexedLayout
+from .generic.layouts import CircuitWithLayout
 from .generic.logging import Log
 from .packers import PackerBase
 from .translation import CircuitBackendTranslations

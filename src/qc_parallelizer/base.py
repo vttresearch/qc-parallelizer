@@ -1,5 +1,3 @@
-from typing import Literal
-
 import qiskit
 import qiskit.circuit
 import qiskit.providers

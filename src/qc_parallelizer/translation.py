@@ -1,17 +1,12 @@
-import itertools
-from collections.abc import Callable, Sequence
-from typing import Literal
+from collections.abc import Sequence
 
 import qiskit
-import qiskit.dagcircuit
 import qiskit.providers
 import qiskit.transpiler
-import rustworkx
-import z3
 
 from .base import Exceptions, Types
 from .generic import backendtools, circuittools, generic
-from .generic.layouts import CircuitWithLayout, IndexedLayout
+from .generic.layouts import CircuitWithLayout
 from .generic.logging import Log
 
 

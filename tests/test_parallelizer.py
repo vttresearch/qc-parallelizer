@@ -2,7 +2,7 @@ import warnings
 
 import pytest
 import qiskit
-from qc_parallelizer import base, packers, parallelizer, translation
+from qc_parallelizer import  packers, parallelizer, translation
 from qc_parallelizer.generic import backendtools, circuittools, generic, layouts
 
 from .utils import build_circuit_list, fake_5qb_backend, fake_20qb_backend, fake_50qb_backend

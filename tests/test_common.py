@@ -1,5 +1,5 @@
 import qiskit
-from qc_parallelizer.generic import backendtools, circuittools, generic, layouts
+from qc_parallelizer.generic import circuittools, layouts
 
 
 class TestLayouts:
