@@ -1,9 +1,11 @@
+import json
 import warnings
-from typing import Any
 
 import qiskit
+import qiskit.providers
 
-from . import layouts
+from . import generic
+from .layouts import CircuitWithLayout, IndexedLayout
 
 
 def count_gates(circuit: qiskit.QuantumCircuit):
@@ -41,7 +43,7 @@ def count_gates(circuit: qiskit.QuantumCircuit):
 
 def remove_idle_qubits(
     circuit: qiskit.QuantumCircuit,
-    layout: layouts.QILayout | None = None,
+    layout: IndexedLayout | None = None,
     allow_layout_replacement: bool = True,
 ):
     """
@@ -62,13 +64,13 @@ def remove_idle_qubits(
     """
 
     if circuit.layout is not None and allow_layout_replacement:
-        layout = layouts.QILayout.from_circuit(circuit)
+        layout = IndexedLayout.from_circuit(circuit)
+    if layout is None:
+        layout = IndexedLayout()
 
     gate_count = count_gates(circuit)
     idle_indices = {index for index, qubit in enumerate(circuit.qubits) if gate_count[qubit] == 0}
     if len(idle_indices) == 0:
-        if layout is None:
-            return circuit
         return circuit, layout
 
     active_qubits = [
@@ -100,23 +102,20 @@ def remove_idle_qubits(
             operation.num_qubits = len(new_qubits)
         new_circuit.append(operation, new_qubits, clbits)
 
-    if layout is not None:
-        new_layout = layout.copy()
+    new_layout = layout.copy()
 
-        # Since we are dealing with indices, which, inherently, keep pointing at the same index even
-        # if the underlying array shifts, we must iterate in decreasing order to not invalidate
-        # later indices
-        modified = False
-        for index in sorted(idle_indices, reverse=True):
-            if index in new_layout.pkeys:
-                new_layout.remove(phys=index, decrement_keys=True)
-                modified = True
+    # Since we are dealing with indices, which, inherently, keep pointing at the same index even if
+    # the underlying array shifts, we must iterate in decreasing order to not invalidate later
+    # indices.
+    modified = False
+    for index in sorted(idle_indices, reverse=True):
+        if index in new_layout.pkeys:
+            new_layout.remove(phys=index, decrement_keys=True)
+            modified = True
 
-        # If the layout was not modified, the new object is discarded and the old layout is returned
-        # instead - this avoids unnecessary copies in memory
-        return new_circuit, (new_layout if modified else layout)
-
-    return new_circuit
+    # If the layout was not modified, the new object is discarded and the old layout is returned
+    # instead - this avoids unnecessary copies in memory.
+    return new_circuit, (new_layout if modified else layout)
 
 
 def pad_to_width(circuit: qiskit.QuantumCircuit, width: int, in_place=True):
@@ -240,20 +239,17 @@ def map_circuit_qubits(
             [creg_mapping[clbit] for clbit in clbits],
         )
 
+    return mapped_circuit
+
 
 def combine_for_backend(
-    circuits: list[tuple[qiskit.QuantumCircuit, Any, layouts.QILayout]],
+    circuits: list[CircuitWithLayout],
     backend: qiskit.providers.BackendV2,
     name: str | None = None,
 ):
     """
     This function combines multiple circuits into a larger host circuit in a backend-aware manner.
-    It requires a list of circuits, each of which must be represented by a (circuit, metadata,
-    layout) triple. The returned circuit's width is the same as the backend size.
-
-    The second element of the triple (metadata) is embedded into the circuit's "internal metadata".
-    This allows for internal metadata to be stored, such as the index of the circuit in some
-    original ordering, while preserving the actual metadata of the circuit.
+    The returned circuit's width is the same as the backend size.
 
     The resulting circuit will contain metadata about the hosted circuits that the user should not
     touch.
@@ -261,28 +257,19 @@ def combine_for_backend(
 
     host_circuit = qiskit.QuantumCircuit(
         backend.num_qubits,
-        metadata={"_hosted_circuits": []},
+        metadata={"hosted_circuits": []},
         name=name or f"{backend.num_qubits}-qubit host",
     )
 
-    for index, (subcircuit, metadata, layout) in enumerate(circuits):
+    for index, subcircuit_with_layout in enumerate(circuits):
+        subcircuit, layout = subcircuit_with_layout.circuit, subcircuit_with_layout.layout
+
         creg_mapping = {}
         for old_reg in subcircuit.cregs:
             new_reg = qiskit.ClassicalRegister(old_reg.size, name=f"circ{index}.{old_reg.name}")
             for i in range(old_reg.size):
                 creg_mapping[old_reg[i]] = new_reg[i]
             host_circuit.add_register(new_reg)
-
-        host_circuit.metadata["_hosted_circuits"].append(
-            {
-                "name": subcircuit.name,
-                "original_metadata": subcircuit.metadata,
-                "internal_metadata": metadata,
-                "registers": {
-                    "clbit": {"sizes": {f"{reg.name}": reg.size for reg in subcircuit.cregs}},
-                },
-            },
-        )
 
         qreg_indices = {
             virt_qubit: subcircuit.find_bit(virt_qubit).index for virt_qubit in subcircuit.qubits
@@ -293,10 +280,35 @@ def combine_for_backend(
             for virt_qubit in subcircuit.qubits
         }
 
+        couplers = [
+            (min(layout.v2p[a], layout.v2p[b]), max(layout.v2p[a], layout.v2p[b]))
+            for a, b in generic.get_edges(get_neighbor_sets(subcircuit))
+        ]
+
+        host_circuit.metadata["hosted_circuits"].append(
+            {
+                "name": subcircuit.name,
+                "metadata": subcircuit.metadata,
+                "qubits": layout.to_physical_list(),
+                "couplers": couplers,
+                "registers": {
+                    "clbit": {"sizes": {f"{reg.name}": reg.size for reg in subcircuit.cregs}},
+                },
+            },
+        )
+
         for operation, qubits, clbits in subcircuit.data:
-            if any(qubit not in qreg_mapping for qubit in qubits):
-                print(f"oh noes! instruction '{operation.name}' skipped")  # TODO: warn
-                print(qreg_mapping, qubits)
+            missing_qubit = any(qubit not in qreg_mapping for qubit in qubits)
+            missing_clbit = any(clbit not in creg_mapping for clbit in clbits)
+            if missing_qubit or missing_clbit:
+                warnings.warn(
+                    (
+                        f"Operation '{operation.name}' skipped while merging circuits since some "
+                        f"of its operands ({qubits if missing_qubit else clbits}) were not found "
+                        f"in the register mapping "
+                        f"({qreg_mapping if missing_qubit else creg_mapping})."
+                    ),
+                )
                 continue
             host_circuit.append(
                 operation,
@@ -305,3 +317,42 @@ def combine_for_backend(
             )
 
     return host_circuit
+
+
+def circuit_hash(circuit: qiskit.QuantumCircuit, meta: bool = True) -> int:
+    """
+    Returns an integer hash for the given circuit. Two circuits have the same hash if they have
+    - the same number of qubits,
+    - the same number of classical bits,
+    - the same operations, in the same order, with equal (qubit and classical bit) operands,
+    - the same global phase,
+    - the same name, and
+    - the same metadata.
+
+    Set `meta` to False to ignore name and metadata.
+
+    Note: Python hashes strings with a random seed, so these hashes are consistent **only** within
+    the same session.
+    """
+    operations = tuple(
+        [
+            (
+                operation.name,
+                tuple([circuit.find_bit(q).index for q in qubits]),
+                tuple([circuit.find_bit(c).index for c in clbits]),
+            )
+            for operation, qubits, clbits in circuit.data
+        ],
+    )
+    ophash = hash(
+        (
+            circuit.num_qubits,
+            circuit.num_clbits,
+            operations,
+            circuit.global_phase,
+        ),
+    )
+    if not meta:
+        return ophash
+    metahash = hash((circuit.name, json.dumps(circuit.metadata, sort_keys=True, ensure_ascii=True)))
+    return hash((ophash, metahash))

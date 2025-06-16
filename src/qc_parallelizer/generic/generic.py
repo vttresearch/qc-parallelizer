@@ -1,3 +1,6 @@
+from collections.abc import Sequence
+
+
 def get_connected_qubit_sets(
     neighbors: list[set[int]],
 ) -> list[set[int]]:
@@ -27,9 +30,7 @@ def get_connected_qubit_sets(
     return connected_sets
 
 
-def get_edges(
-    neighbors: list[set[int]],
-) -> set[tuple[int, int]]:
+def get_edges(neighbors: Sequence[set[int]]) -> list[tuple[int, int]]:
     """
     Returns a set of edges between qubits. If there is a gate (virtual) or coupler (physical)
     between two qubits, there is an edge between them.
@@ -42,4 +43,21 @@ def get_edges(
     for from_, nb_set in enumerate(neighbors):
         for to in nb_set:
             edges.add((min(from_, to), max(from_, to)))
-    return edges
+    return list(edges)
+
+
+def get_neighbor_sets(edges: Sequence[tuple[int, int]]) -> Sequence[set[int]]:
+    neighbors = [set() for _ in range(max(n for a, b in edges for n in (a, b)) + 1)]
+    for from_, to in edges:
+        neighbors[from_].add(to)
+        neighbors[to].add(from_)
+    return neighbors
+
+
+def get_neighbor_counts(edges: Sequence[tuple[int, int]], exclude: set[int]) -> Sequence[int]:
+    neighbors = [0 for _ in range(max(n for a, b in edges for n in (a, b)) + 1)]
+    for from_, to in edges:
+        if from_ not in exclude and to not in exclude:
+            neighbors[from_] += 1
+            neighbors[to] += 1
+    return neighbors

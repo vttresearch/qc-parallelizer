@@ -8,21 +8,24 @@ results. If earlier results are present, they are loaded and automatically compa
 The code might not be the most readable kind but it works and produces pretty output :)
 """
 
+import argparse
+import cProfile
 import functools
 import json
 import os
+import pstats
 import shutil
 import sys
 import tempfile
 import time
 
-from qc_parallelizer import parallelizer
-from utils import build_circuit_list, fake_20qb_backend
+import qc_parallelizer as parallelizer
+from utils import build_circuit_list, fake_50qb_backend_cluster
 
 # Enable/disable ANSI colors depending on output type (or user preference)
 if os.isatty(0) and "--no-color" not in sys.argv:
 
-    class Color:
+    class Color:  # type: ignore
         enabled = True
         Reset = "\033[0m"
         Grey = "\033[38;5;245m"
@@ -32,6 +35,7 @@ if os.isatty(0) and "--no-color" not in sys.argv:
         Cyan = "\033[96m"
         BgBlue = "\033[104m\033[30m"
         BgWhite = "\033[107m\033[30m"
+        Bold = "\033[1m"
 
         @staticmethod
         def BgGrey(level: float):
@@ -41,6 +45,10 @@ else:
     class DummyNoColorMetaclass(type):
         def __getattr__(self, attr):
             # No colors for you
+            return ""
+
+        @staticmethod
+        def BgGrey(level: float):
             return ""
 
     class Color(metaclass=DummyNoColorMetaclass):
@@ -106,27 +114,36 @@ def init_benchmark():
                     print(f"[ {current_benchmark} ] ", end="")
             print(color, end="")
             if index == len(lines) - 1:
-                print(line, **kwargs)
+                print(line + Color.Reset, **kwargs)
             else:
-                print(line)
+                print(line + Color.Reset)
         next_on_new_line = "end" not in kwargs
 
     return prefix_print
 
 
-def run_single(circuits_string: str):
+def run_single(circuits_string: str, backends, show: bool = False):
     global benchmarks_run
     print = init_benchmark()
 
     print(f"Generating {Color.Cyan}'{circuits_string}'{Color.Reset}... ", end="", flush=True)
-    circuits = build_circuit_list(circuits_string)
+    circuits = build_circuit_list(circuits_string, force_list=True)
     print(f"rearranging {Color.Cyan}{len(circuits)} circuits{Color.Reset}...")
 
     start = time.time()
-    rearranged = parallelizer.rearrange(circuits, fake_20qb_backend)
+    rearranged = parallelizer.rearrange(circuits, backends)
     duration = time.time() - start
 
-    print(f"==> {Color.Magenta}{duration:.2f} seconds{Color.Reset}", end="")
+    print(
+        (
+            f"==> {Color.Magenta}{duration:.2f} seconds{Color.Reset} "
+            f"({Color.Magenta}{len(circuits) / duration:.2f} circ/s{Color.Reset}, "
+            f"{Color.Magenta}{duration / len(circuits):.2f} s/circ{Color.Reset}, "
+            f"{Color.Magenta}{sum(c.num_qubits for c in circuits) / duration:.2f} "
+            f"qb/s{Color.Reset})"
+        ),
+        end="",
+    )
     if previous := history.get(circuits_string, None):
         perc = round(100 * duration / previous)
         color = Color.Green if perc <= 100 else Color.Red
@@ -135,11 +152,33 @@ def run_single(circuits_string: str):
         print()
     print(f"\nResult:\n{parallelizer.describe(rearranged, color=False)}", color=Color.Grey)
 
+    if show:
+        import matplotlib.pyplot as plt
+
+        parallelizer.visualization.plot_placements(rearranged)
+        plt.show()
+
     benchmarks_run += 1
     history[circuits_string] = duration
 
 
-def search_for_maximum(gen_circuits_string, time_limit: float):
+def profile_multiple(
+    circuits_string: list[str],
+    backends: list,
+    filename: str = "parallelizer.prof",
+):
+    circuit_lists = [build_circuit_list(cs) for cs in circuits_string]
+    pr = cProfile.Profile()
+    print("Profiling...")
+    for circs in circuit_lists:
+        pr.runcall(parallelizer.rearrange, circs, backends)
+    print("Done.")
+    stats = pstats.Stats(pr)
+    stats.sort_stats("cumtime").dump_stats(filename)
+    print(f"Saved results in {filename}.")
+
+
+def search_for_maximum(gen_circuits_string, time_limit: float, backends):
     global benchmarks_run
     print = init_benchmark()
 
@@ -157,10 +196,15 @@ def search_for_maximum(gen_circuits_string, time_limit: float):
     def get_duration(index):
         circuits = build_circuit_list(gen_circuits_string(index))
         start = time.time()
-        parallelizer.rearrange(circuits, fake_20qb_backend)
+        parallelizer.rearrange(circuits, backends)
         return time.time() - start
 
     def search():
+        """
+        Runs binary search for the last count that does not exceed the time limit. First finds an
+        upper bound by doubling the count until the time limit is exceeded, then narrows down to the
+        exact count.
+        """
         left, right = 1, 1
         while get_duration(right) < time_limit:
             right *= 2
@@ -191,18 +235,39 @@ def search_for_maximum(gen_circuits_string, time_limit: float):
 
 
 if __name__ == "__main__":
-    load_history()
-    print_title("Single timed runs (lower is better)")
-    run_single("10 partial 20 10")
-    run_single("10 star")
-    run_single("5 partial 20 10 5 star")
-    run_single("5 star 5 partial 20 10")
-    run_single("10 h 1")
-    run_single("10 ghz 2")
-    print_title("Time-limited runs (higher is better)")
-    search_for_maximum(lambda i: f"{i} star", 1.0)
-    search_for_maximum(lambda i: f"{i} ghz 2", 1.0)
-    search_for_maximum(lambda i: f"{i} h 1", 1.0)
-    print_title(f"{benchmarks_run} benchmarks finished!")
-    save_history()
-    print(f"\n{Color.Grey}Results have been saved into {save_filename}.{Color.Reset}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--log", action="store_true")
+    parser.add_argument("-p", "--profile", action="store_true")
+    parser.add_argument("-s", "--show", action="store_true")
+    parser.add_argument("-c", "--circuits", nargs="+")
+    parser.add_argument("-n", "--num-qpus", type=int, default=2)
+    args = parser.parse_args()
+
+    backends = fake_50qb_backend_cluster(args.num_qpus)
+
+    if args.log:
+        parallelizer.Log.set_level("debug")
+
+    if args.profile:
+        circuits = args.circuits or ["20 star", "20 h 1"]
+        profile_multiple(circuits, backends)
+    else:
+        load_history()
+        if args.circuits:
+            for circuits in args.circuits:
+                run_single(circuits, backends, show=args.show)
+        else:
+            print_title("Single timed runs (lower is better)")
+            run_single("1000 partial 20 10", backends)
+            run_single("1000 star", backends)
+            run_single("500 partial 20 10 500 star", backends)
+            run_single("500 star 500 partial 20 10", backends)
+            run_single("1000 h 1", backends)
+            run_single("1000 ghz 2", backends)
+            print_title("Time-limited runs (higher is better)")
+            search_for_maximum(lambda i: f"{i} star", 1.0, backends)
+            search_for_maximum(lambda i: f"{i} ghz 2", 1.0, backends)
+            search_for_maximum(lambda i: f"{i} h 1", 1.0, backends)
+        print_title(f"{benchmarks_run} benchmark(s) finished!")
+        save_history()
+        print(f"\n{Color.Grey}Results have been saved into {save_filename}.{Color.Reset}")

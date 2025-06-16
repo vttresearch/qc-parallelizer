@@ -4,15 +4,23 @@ Base fixtures and other general definitions that are used in multiple tests.
 
 import itertools
 from inspect import signature
-from typing import Any
 
 import iqm.qiskit_iqm as iqm
 import qiskit
+from iqm.qiskit_iqm.fake_backends.fake_adonis import IQMFakeAdonis
+from iqm.qiskit_iqm.fake_backends.fake_aphrodite import IQMFakeAphrodite
+from iqm.qiskit_iqm.fake_backends.fake_apollo import IQMFakeApollo
 
-fake_20qb_backend = iqm.IQMFakeApollo()
+fake_5qb_backend = IQMFakeAdonis()
+fake_20qb_backend = IQMFakeApollo()
+fake_50qb_backend = IQMFakeAphrodite()
 
 
-def build_ghz_circuit(n):
+def fake_50qb_backend_cluster(n: int):
+    return [IQMFakeAphrodite() for _ in range(n)]
+
+
+def build_ghz_circuit(n: int):
     """Builds an n-qubit GHZ circuit. For n = 2, this is the Bell state circuit."""
 
     circuit = qiskit.QuantumCircuit(n)
@@ -22,7 +30,7 @@ def build_ghz_circuit(n):
     return circuit
 
 
-def build_partially_used_circuit(num_qubits, num_used):
+def build_partially_used_circuit(num_qubits: int, num_used: int):
     """Builds a circuit with a gate on a subset of the qubits, leaving the rest unused."""
 
     circuit = qiskit.QuantumCircuit(num_qubits)
@@ -30,15 +38,37 @@ def build_partially_used_circuit(num_qubits, num_used):
     return circuit
 
 
-def build_circuit_list(circuits_string: str):
+def build_grid_circuit(width: int, height: int):
+    circuit = qiskit.QuantumCircuit(width * height)
+    for i in range(width - 1):
+        for j in range(height):
+            a = i + j * width
+            b = i + 1 + j * width
+            circuit.cx(a, b)
+    for j in range(height - 1):
+        for i in range(width):
+            a = i + j * width
+            b = i + (j + 1) * width
+            circuit.cx(a, b)
+    return circuit
+
+
+def build_line_circut(n: int):
+    circuit = qiskit.QuantumCircuit(n)
+    circuit.h(0)
+    for i in range(n - 1):
+        circuit.cx(i, i + 1)
+    return circuit
+
+
+def build_circuit_list(circuits_string: str, force_list: bool = False):
     """
-    Builds circuits based on a very simple language. Syntax is essentially
+    Builds circuits based on a very simple language. Syntax is
     ```
     [count] type[ param[ param[...]] [[count] type ...]
     ```
-    where brackets denote optional values and spaces are literal spaces.
-
-    Currently supported types are `ghz`, `partial`, `star`, and `h`. See source for more info.
+    where brackets denote optional values and spaces are literal spaces. See source for supported
+    types.
     """
 
     def generate(func, params, count):
@@ -56,6 +86,8 @@ def build_circuit_list(circuits_string: str):
         "partial": build_partially_used_circuit,
         "star": lambda: build_ghz_circuit(5),
         "h": lambda n: build_partially_used_circuit(n, n),
+        "grid": build_grid_circuit,
+        "line": build_line_circut,
     }
     circuit_list, explicit_count_specified = [], False
     instruction_stream = iter(circuits_string.split(" "))
@@ -72,6 +104,6 @@ def build_circuit_list(circuits_string: str):
         params = list(itertools.islice(instruction_stream, num_params))
 
         circuit_list.extend(generate(factory_func, params, count))
-    if not explicit_count_specified and len(circuit_list) == 1:
+    if not explicit_count_specified and not force_list and len(circuit_list) == 1:
         return circuit_list[0]
     return circuit_list

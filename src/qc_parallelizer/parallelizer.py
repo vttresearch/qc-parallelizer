@@ -1,14 +1,18 @@
 import functools
 import itertools
 import operator
+from collections import Counter
+from collections.abc import Sequence
 
 import qiskit
 import qiskit.providers
 import qiskit.result
 
-from . import packing, postprocessing
+from . import binmanager, packers, postprocessing
 from .base import Exceptions, Types
-from .generic import circuittools, layouts
+from .generic import circuittools
+from .generic.layouts import CircuitWithLayout, IndexedLayout
+from .generic.logging import Log
 
 
 class ParallelJob:
@@ -32,8 +36,8 @@ class ParallelJob:
 
         def __init__(
             self,
-            jobs: list[tuple[Types.Backend, qiskit.QuantumCircuit, qiskit.providers.Job]] | None,
-            circuit_dict: dict[Types.Backend, list[qiskit.QuantumCircuit]],
+            jobs: Sequence[tuple[Types.Backend, qiskit.QuantumCircuit, qiskit.providers.JobV1]],
+            circuit_dict: dict[Types.Backend, Sequence[qiskit.QuantumCircuit]],
         ):
             self.jobs = jobs
             self.backends = list(circuit_dict.keys())
@@ -77,32 +81,35 @@ class ParallelJob:
 
     def __init__(
         self,
-        jobs: list[tuple[Types.Backend, qiskit.QuantumCircuit, qiskit.providers.Job]],
-        circuits: dict[Types.Backend, list[qiskit.QuantumCircuit]],
+        jobs: Sequence[tuple[Types.Backend, qiskit.QuantumCircuit, qiskit.providers.JobV1]],
+        circuits: dict[Types.Backend, Sequence[qiskit.QuantumCircuit]],
     ):
         self._jobs = jobs
         self._circuits = circuits
-        self._raw_results: list[qiskit.result.result.Result] | None = None
-        self._results: list[qiskit.result.result.Result] | None = None
+        self._raw_results: Sequence[qiskit.result.result.Result] | None = None
+        self._results: Sequence[Types.Result] | None = None
 
     def _fetch_results(self):
         if self._raw_results is None:
-            self._raw_results = [job.result() for _, _, job in self._jobs]
+            # `job.result()` is abstract and has no type, so we ignore type checking here
+            self._raw_results = [job.result() for _, _, job in self._jobs]  # type: ignore
         if self._results is None:
+            Log.debug(f"Got |{len(self._raw_results)}| results.")
             results = itertools.chain(
-                *(postprocessing.split_results(res) for res in self._raw_results),
+                # The type checker thinks that `self._raw_results` can be None here, so we ignore
+                *(postprocessing.split_results(res) for res in self._raw_results),  # type: ignore
             )
             # Now we have a list of (index, result) tuples, so we sort by index and only keep result
             self._results = [result for _, result in sorted(results, key=operator.itemgetter(0))]
 
-    def results(self) -> list[Types.Result]:
+    def results(self) -> Sequence[Types.Result]:
         """
         Returns results for each circuit in the parallel execution. After calling this for the first
         time, the results are cached, so subsequent calls are very lightweight.
         """
 
         self._fetch_results()
-        return self._results
+        return self._results  # type: ignore (the previous call ensures that this is not None)
 
     @functools.cached_property
     def info(self) -> ParallelizationInfo:
@@ -146,88 +153,138 @@ class ParallelJob:
 
     def __getattr__(self, attr):
         if attr.startswith("_"):
-            return None
+            raise KeyError(f"attribute {attr} may not be accessed")
         return ParallelJob.ListAttributeProxy([job for _, _, job in self._jobs], attr)
 
 
 def rearrange(
-    circuits: list[qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout]],
-    backends: Types.Backend | list[Types.Backend],
+    circuits: Sequence[qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout]],
+    backends: Types.Backend | Sequence[Types.Backend] | Sequence[tuple[Types.Backend, float]],
     allow_ooe: bool = True,
-    packpol: packing.PackingPolicyBase = packing.DefaultPackingPolicy(),
-    transpiler_seed: int = 0,
-) -> dict[Types.Backend, list[qiskit.QuantumCircuit]]:
+    packer: packers.PackerBase = packers.Defaults.Fast(),
+) -> dict[Types.Backend, Sequence[qiskit.QuantumCircuit]]:
     """
     (Re)arranges a list of circuits into larger host circuits in preparation for parallel execution.
-    Basically, this function combines as many circuits into new, wider circuits, as the provided
-    backend(s) natively support.
+    Basically, this function combines multiple circuits into merged, wider circuits. How the
+    circuits are combined depends on their connectivity and other parameters.
 
     Multiple backends may also be passed, but this feature is mutually exclusive with passing layout
     information for circuits.
 
-    `allow_ooe` (allow out-of-order execution) controls circuit ordering. Setting it to False forces
-    the parallelizer to set circuits strictly in order - that is, a circuit that appears earlier in
-    the list of circuits will be executed latest at the same time as a circuit that appears later.
-    By default, it is True, which allows the parallelizer to reorder circuits for a more optimal
-    packing.
+    Args:
+        circuits:
+            A list of QuantumCircuit objects or (QuantumCircuit, Layout) tuples. The given circuit
+            objects are copied and not modified.
+        backends:
+            A Backend object, a list of Backend objects, or a list of (Backend, cost) tuples. The
+            circuits will be rearranged onto these backends. In the third case, costs can be used to
+            prioritize some backend by assigning lower cost to it. Backends with no associated cost
+            are assumed to have unit cost (1).
+        allow_ooe:
+            Controls circuit ordering. Passing False forces the parallelizer to set circuits
+            strictly in order - that is, a circuit that appears earlier in the list of circuits will
+            be executed latest at the same time as a circuit that appears later. By default, the
+            parallelizer can reorder circuits for efficiency.
+        packer:
+            The circuit packer to use for placing circuits onto backends. Must be a subclass of
+            `packers.PackerBase` (see the `packers` module for more information). Two defaults are
+            currently defined: `packers.Defaults.Fast` and `packers.Defaults.Optimal`.
 
-    `packpol` is a circuit packing policy. Please refer to the packing module for more information.
-    `transpiler_seed` is passed onward to transpiler passes that can work with seeds for consistent
-    results. By default, it is fixed - use some value from `random` for variance in results.
-
-    The resulting combined circuits will contain metadata about the original circuits, which the
-    user should not touch.
+    Returns:
+        A dict with backends as keys and lists of packed circuits as values. You may inspect its
+        contents manually, with `describe()`, or the visualization submodule, but you should not
+        modify its contents. The dict is passable as is to `execute()`.
     """
 
     has_multiple_backends = False
-    if isinstance(backends, (list, tuple)):
+    if isinstance(backends, Sequence):
         if len(backends) > 1:
             has_multiple_backends = True
     else:
         backends = [backends]
 
-    has_layout_information = any(not isinstance(circ, qiskit.QuantumCircuit) for circ in circuits)
+    has_layout_information = any(isinstance(circ, Sequence) for circ in circuits)
 
     if has_layout_information and has_multiple_backends:
-        raise Exceptions.ParameterConflict(
+        raise Exceptions.ParameterError(
             "circuit layouts and multiple backends may not be specified simultaneously",
         )
 
-    def prune_and_normalize_layout_information(
-        circuit: qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout],
-    ) -> tuple[qiskit.QuantumCircuit, layouts.QILayout]:
-        layout = layouts.QILayout()
-        if not isinstance(circuit, qiskit.QuantumCircuit):
-            circuit, layout = circuit
-            layout = layouts.QILayout.from_layout(layout, circuit)
-        return circuittools.remove_idle_qubits(circuit, layout)
-
-    # Add index to circuits for restoring original order after execution
-    indexed_circuits = [
-        (index, *circuit)
-        for index, circuit in enumerate(
-            prune_and_normalize_layout_information(circuit) for circuit in circuits
+    def normalize_backend(backend) -> tuple[Types.Backend, float]:
+        if isinstance(backend, Types.Backend):
+            return backend, 1
+        if isinstance(backend, Sequence) and len(backend) == 2:
+            return tuple(backend)
+        raise Exceptions.ParameterError(
+            f"expected sequence of backends or (backend, cost) tuples, got '{type(backend)}'",
         )
-    ]
 
-    if allow_ooe:
-        # Sort circuits based on two factors. In the order of precedence,
-        #  1. circuits with more layout information and
-        #  2. larger circuits
-        # come first.
-        indexed_circuits.sort(key=lambda circuit: (-circuit[2].size, -circuit[1].num_qubits))
+    backends = [normalize_backend(backend) for backend in backends]
 
-    backend_bins = packing.CircuitBinManager(backends, packpol)
+    def normalize_circuit(
+        circuit: qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout],
+        index: int,
+    ):
+        """
+        There are three parts to normalization:
+         1. Layout normalization to an `IndexedLayout` object.
+         2. Idle qubit removal (and according adjustment of the layout).
+         3. Embedding the circuit's original index into its metadata.
+        """
 
-    for index, circuit, layout in indexed_circuits:
-        backend_bins.place(circuit, layout, {"index": index}, transpiler_seed=transpiler_seed)
+        if isinstance(circuit, qiskit.QuantumCircuit):
+            layout = IndexedLayout()
+        else:
+            if isinstance(circuit, Sequence) and len(circuit) == 2:
+                circuit, layout = circuit
+            else:
+                raise Exceptions.ParameterError(
+                    (
+                        f"expected sequence of circuits or (circuit, layout) tuples, got "
+                        f"'{type(circuit)}'"
+                    ),
+                )
+            layout = IndexedLayout.from_layout(layout, circuit)
+        bare_circuit, layout = circuittools.remove_idle_qubits(circuit, layout)
+        if bare_circuit.num_qubits == 0:
+            # The circuit has no active qubits :(
+            return None
+        bare_circuit = bare_circuit.copy()
+        bare_circuit.metadata = {
+            "original_metadata": bare_circuit.metadata,
+            "index": index,
+        }
+        return CircuitWithLayout(bare_circuit, layout)
+
+    indexed_circuits = []
+    circuit_index = 0
+    for circuit in circuits:
+        if normalized := normalize_circuit(circuit, circuit_index):
+            indexed_circuits.append(normalized)
+            circuit_index += 1
+
+    Log.info(
+        (
+            f"Attempting to rearrange and distribute {len(indexed_circuits)} circuit(s) "
+            f"onto {len(backends)} backend(s)."
+        ),
+    )
+
+    backend_bins = binmanager.CircuitBinManager(backends, packer)
+    backend_bins.place(indexed_circuits, allow_ooe)
+
+    Log.info("Circuit rearranging succeeded.")
 
     return backend_bins.realize()
 
 
 def execute(
-    circuits: list[qiskit.QuantumCircuit] | dict[Types.Backend, list[qiskit.QuantumCircuit]],
-    backends: Types.Backend | list[Types.Backend] | None = None,
+    circuits: Sequence[qiskit.QuantumCircuit]
+    | dict[Types.Backend, Sequence[qiskit.QuantumCircuit]],
+    backends: Types.Backend
+    | Sequence[Types.Backend]
+    | Sequence[tuple[Types.Backend, float]]
+    | None = None,
     rearrange_args: dict = {},
     run_args: dict = {},
 ) -> ParallelJob:
@@ -236,40 +293,61 @@ def execute(
     execution, they are rearranged. If you wish to call just one function to do everything for you,
     this is that function.
 
-    Returns a `ParallelJob` object that wraps the underlying job information. Call `.results()` on
-    this object to block and retrieve the results. The object behaves just like a traditional job
-    object, but deals with several jobs at once.
+    Args:
+        circuits:
+            A list of circuits. See `rearrange()` for details.
+        backends:
+            A backend or list of backends. See `rearrange()` for details.
+        rearrange_args:
+            A dict that is passed as kwargs to `rearrange()`, if calling it is necessary.
+        run_args:
+            A dict that is passed as kwargs to `backend.run()`. Use this to set execution
+            properties like shot count.
 
-    The parameters `rearrange_args` and `run_args` allow passing kwargs to the underlying calls to
-    `rearrange()` and `backend.run()`, respectively.
+    Returns:
+        A `ParallelJob` object that wraps the underlying job information. Call `.results()` on this
+        object to block and retrieve the results. The object behaves just like a traditional job
+        object, but deals with several jobs at once.
     """
 
-    if isinstance(circuits, list):
+    if isinstance(circuits, Sequence):
         if backends is None:
             raise Exceptions.MissingParameter(
                 "backends must be provided if the input is a list of circuits",
             )
+        Log.debug("Provided circuits have not yet been rearranged. Rearranging.")
         circuits = rearrange(circuits, backends, **rearrange_args)
 
-    # TODO: combine circuits with same measured qubits for less jobs
-    jobs = [
-        (backend, circuit, backend.run(circuit, **run_args))
+    # TODO: combine circuits with same measured qubits into batches to reduce job count
+    job_args = [
+        (backend, circuit)
         for backend, circuit_list in circuits.items()
         for circuit in circuit_list
         if len(circuit_list) > 0
     ]
+    Log.info(f"Submitting |{len(job_args)}| jobs.")
+
+    jobs: list[tuple[Types.Backend, qiskit.QuantumCircuit, qiskit.providers.JobV1]] = [
+        (backend, circuit, backend.run(circuit, **run_args)) for backend, circuit in job_args
+    ]  # type: ignore
+    Log.info(f"Submitted |{len(jobs)}| jobs.")
 
     # TODO: jobs and circuits contain duplicate/redundant info
     return ParallelJob(jobs, circuits)
 
 
-def describe(rearranged: dict[Types.Backend, list[qiskit.QuantumCircuit]], color: bool = True):
+def describe(rearranged: dict[Types.Backend, Sequence[qiskit.QuantumCircuit]], color: bool = True):
     """
     Returns a description of parallelized circuits. The result is a nicely formatted string that
     contains a list of backends and statistics for the number of circuits per each backend. The
     formatted string contains newlines and is intended to be printed as is.
 
-    Set `color` to False to disable colored formatting.
+    Args:
+        rearranged:
+            A dict of rearranged circuits, as returned by `rearrange()`.
+
+        color:
+            Controls colored output. Enabled by default, set to False to disable.
     """
 
     class Color:
@@ -281,22 +359,17 @@ def describe(rearranged: dict[Types.Backend, list[qiskit.QuantumCircuit]], color
 
     description = [f"{fmt(len(rearranged), 'backend', Color.Cyan)}"]
     for backend, circuits in rearranged.items():
-        hosted_circuits = [circuit.metadata["_hosted_circuits"] for circuit in circuits]
-        lens = [len(c) for c in hosted_circuits]
+        hosted_circuits = [circuit.metadata["hosted_circuits"] for circuit in circuits]
+        lens = Counter(len(c) for c in hosted_circuits)
+        lens_str = ", ".join(f"{count}x {size}-circuit" for size, count in lens.items())
         description.extend(
             [
                 (
                     " - "
                     f"{backend.name} ({fmt(backend.num_qubits, 'qubit', Color.Cyan)}, "
-                    f"{fmt(len(circuits), 'circuit', Color.Cyan)})"
+                    f"{fmt(len(circuits), 'host circuit', Color.Cyan)})"
                 ),
-                (
-                    "   "
-                    f"Min {Color.Cyan}{min(lens)}{Color.Reset} / "
-                    f"avg {Color.Cyan}{sum(lens) / len(hosted_circuits):.1f}{Color.Reset} / "
-                    f"max {Color.Cyan}{max(lens)}{Color.Reset} "
-                    "hosted circuits per physical circuit"
-                ),
+                ("   " f"With {Color.Cyan}{lens_str} hosts{Color.Reset}"),
             ],
         )
 

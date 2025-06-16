@@ -1,14 +1,14 @@
-import heapq
-import itertools
+from collections.abc import Mapping
 from typing import Any
 
 import qiskit
 import qiskit.dagcircuit
 import qiskit.transpiler
+from qiskit.transpiler.preset_passmanagers.generate_preset_pass_manager import _parse_initial_layout
 
 
 def layout_to_dict(
-    layout: qiskit.transpiler.Layout | list | dict | None,
+    layout: Any,
     circuit: qiskit.QuantumCircuit,
 ) -> dict[int, int]:
     """
@@ -25,13 +25,21 @@ def layout_to_dict(
         # case separately
         # TODO: a list of something else, like Qubit objects, might also be given
         layout = qiskit.transpiler.Layout.from_intlist(layout, *circuit.qregs)
+    elif isinstance(layout, IndexedLayout):
+        return layout.v2p
+    elif isinstance(layout, dict) and all(
+        isinstance(k, int) and isinstance(v, int) for k, v in layout.items()
+    ):
+        return layout
     else:
         # If not a list, we let the default parser do its thing - this handles Layout objects,
-        # dicts, and other formats
-        layout = qiskit.compiler.transpiler._parse_initial_layout(layout)
-    # If there is no layout, return an empty mapping
-    if layout is None:
+        # dicts with Bit objects, and other formats
+        layout = _parse_initial_layout(layout)
+
+    # If the layout could not be determined, return an empty mapping
+    if not isinstance(layout, qiskit.transpiler.Layout):
         return {}
+
     # Finally, return a mapping from virtual indices to physical indices
     return {
         circuit.find_bit(qubit).index: physical_index
@@ -39,7 +47,39 @@ def layout_to_dict(
     }
 
 
-class QILayout:
+def adjust_indices(
+    indices: set[int],
+    blocked: set[int],
+) -> tuple[dict[int, int | None], dict[int, int]]:
+    """
+    Small helper for adjusting qubit indices based on a set of blocked qubits. Returns a `dict` of
+    the mapped indices and an inverse mapping.
+
+    This is best explained visually:
+    ```
+    0 [blocked] -> None  ,----> 0
+                        /
+    1 -----------------'  ,---> 1
+                         /
+    2 [blocked] -> None /   ,-> 2
+                       /   /
+    3 ----------------'   /
+                         /
+    4 ------------------'
+    ```
+    """
+
+    def adjust(index):
+        if index in blocked:
+            return None
+        blocked_below = len({other for other in blocked if other < index})
+        return index - blocked_below
+
+    mapping = {index: adjust(index) for index in indices}
+    return mapping, {b: a for a, b in mapping.items() if b is not None}
+
+
+class IndexedLayout:
     """
     Class for representing one-to-one qubit index mappings between virtual circuit indices and
     physical backend indices. Resembles Qiskit's Layout class, but has a restricted and improved
@@ -51,16 +91,21 @@ class QILayout:
     instance(s) that represent it. At least in this class.
     """
 
+    _v2p: dict[int, int]
+    _p2v: dict[int, int]
+
     @classmethod
     def from_layout(
         cls,
-        layout: qiskit.transpiler.Layout | list | dict | None,
+        layout: Any,
         circuit: qiskit.QuantumCircuit,
     ):
         return cls(v2p=layout_to_dict(layout, circuit))
 
     @classmethod
     def from_circuit(cls, circuit: qiskit.QuantumCircuit):
+        if circuit.layout is None:
+            return cls()
         initial_layout = circuit.layout.initial_virtual_layout()
         return cls(
             p2v={
@@ -96,22 +141,21 @@ class QILayout:
     def from_trivial(cls, num_qubits: int):
         return cls(v2p={i: i for i in range(num_qubits)})
 
-    def __init__(self, v2p: dict[int, int] | None = None, p2v: dict[int, int] | None = None):
+    def __init__(self, v2p: Mapping[int, int] | None = None, p2v: Mapping[int, int] | None = None):
+        """
+        Constructs a layout from either a virtual-physical mapping, a physical-virtual mapping, or
+        no mapping at all.
+        """
+
         if v2p is None and p2v is None:
-            self._v2p: dict[int, int] = {}
-            self._p2v: dict[int, int] = {}
+            self._v2p = {}
+            self._p2v = {}
         elif v2p is not None:
-            self._v2p: dict[int, int] = v2p
-            self._p2v: dict[int, int] = {}
-            for k, v in v2p.items():
-                if v is not None:
-                    self._p2v[v] = k
+            self._v2p = dict(v2p)
+            self._p2v = {p: v for v, p in v2p.items()}
         elif p2v is not None:
-            self._v2p: dict[int, int] = {}
-            self._p2v: dict[int, int] = p2v
-            for k, v in p2v.items():
-                if v is not None:
-                    self._v2p[v] = k
+            self._v2p = {v: p for p, v in p2v.items()}
+            self._p2v = dict(p2v)
         else:
             raise ValueError("only up to one mapping may be provided as an initializer")
 
@@ -133,14 +177,14 @@ class QILayout:
 
     @property
     def v2p(self):
-        return {v: p for v, p in self._v2p.items() if self._p2v[p] is not None}
+        return self._v2p
 
     @property
     def p2v(self):
-        return {p: v for p, v in self._p2v.items() if v is not None}
+        return self._p2v
 
     def copy(self):
-        return QILayout(p2v={**self._p2v})
+        return type(self)(p2v={**self._p2v})
 
     def add(self, virt: int, phys: int):
         self._v2p[virt] = phys
@@ -152,7 +196,9 @@ class QILayout:
         phys: int | None = None,
         decrement_keys: bool = False,
     ):
-        if virt is not None:
+        if virt is None and phys is None:
+            raise ValueError("both `virt` and `phys` cannot be None")
+        elif virt is not None:
             phys = self._v2p[virt]
         elif phys is not None:
             virt = self._p2v[phys]
@@ -163,7 +209,7 @@ class QILayout:
         if decrement_keys:
             new_v2p = {}
             for other_virt in list(self._v2p.keys()):
-                if other_virt > virt:
+                if other_virt > virt:  # type: ignore # virt is known to be non-None at this point
                     phys = self._v2p[other_virt]
                     del self._v2p[other_virt]
                     new_virt = other_virt - 1
@@ -171,56 +217,28 @@ class QILayout:
                     self._p2v[phys] = new_virt
             self._v2p = {**self._v2p, **new_v2p}
 
-    def block(self, phys: int | set[int]):
-        """
-        Blocks a set of physical indices. The index will be reported as blocked when calling
-        `{is, get}_blocked` and will not appear on `v2p` or `p2v`.
-        """
-
-        if isinstance(phys, int):
-            phys = {phys}
-        for i in phys:
-            self._p2v[i] = None
-
     def with_entry(self, virt: int, phys: int):
-        return QILayout(p2v={**self._p2v, phys: virt})
+        return type(self)(p2v={**self._p2v, phys: virt})
 
-    def with_blocked(self, phys: int | set[int]):
-        copy = self.copy()
-        copy.block(phys)
-        return copy
-
-    def is_blocked(self, phys: int):
-        return phys in self._p2v and self._p2v[phys] is None
-
-    def get_blocked(self):
-        return {p for p, v in self._p2v.items() if v is None}
-
-    def insert_blocked_indices(self, phys_set: set[int]):
+    def map(self, mapping: dict[int, int]):
         """
-        Similar to `block`, but increments other physical indices as if these qubits were inserted
-        into the backend.
+        Maps the layout's physical indices according to `mapping`.
         """
-        new_phys_indices = {p: p for p in self._p2v.keys()}
-
-        for b in sorted(phys_set):
-            for p in new_phys_indices:
-                if new_phys_indices[p] >= b:
-                    new_phys_indices[p] += 1
-
-        for p, v in sorted(self._p2v.items(), reverse=True):
-            del self._p2v[p]
-            self._p2v[new_phys_indices[p]] = v
-        for v, p in list(self._v2p.items()):
-            self._v2p[v] = new_phys_indices[p]
-        for p in phys_set:
-            self._p2v[p] = None
+        return type(self)(p2v={mapping[p]: v for p, v in self._p2v.items()})
 
     def to_qiskit_layout(self, circuit: qiskit.QuantumCircuit) -> qiskit.transpiler.Layout:
         """
-        Converts to a Qiskit Layout object. Discards blocked indices.
+        Converts to a Qiskit Layout object.
         """
         return qiskit.transpiler.Layout({circuit.qubits[v]: p for v, p in self._v2p.items()})
+
+    def to_physical_list(self) -> list[int | None]:
+        """
+        Converts to a list of physical qubit indices. Gaps, if present, are filled with None.
+        """
+        v2p = self.v2p
+        num_virtual = max(v2p.keys()) + 1
+        return [v2p[v] if v in v2p else None for v in range(num_virtual)]
 
     def __repr__(self):
         return f"QILayout(p2v={self._p2v.__repr__()})"
@@ -234,8 +252,7 @@ class QILayout:
         return (
             "{"
             + ", ".join(
-                (f"!p_{p}" if v is None else f"v_{v} ~ p_{p}")
-                for p, v in sorted(self._p2v.items(), key=self._p2v_sort_key)
+                f"v_{v} ~ p_{p}" for p, v in sorted(self._p2v.items(), key=self._p2v_sort_key)
             )
             + "}"
         )
@@ -244,8 +261,31 @@ class QILayout:
         return (
             "{"
             + ", ".join(
-                (f"!QB{p + 1}" if v is None else f"QB{p + 1}: {v}")
-                for p, v in sorted(self._p2v.items(), key=self._p2v_sort_key)
+                f"QB{p + 1}: {v}" for p, v in sorted(self._p2v.items(), key=self._p2v_sort_key)
             )
             + "}"
         )
+
+
+class CircuitWithLayout:
+    circuit: qiskit.QuantumCircuit
+    layout: IndexedLayout
+
+    def __init__(self, circuit: qiskit.QuantumCircuit, layout: Any):
+        self.circuit = circuit
+        self.layout = IndexedLayout.from_layout(layout, circuit)
+
+    @property
+    def full_layout(self) -> bool:
+        """
+        `True` if the layout covers all virtual qubits, `False` otherwise.
+        """
+        return self.layout.size == self.circuit.num_qubits
+
+    @property
+    def layout_fraction(self) -> float:
+        """
+        A float in the range [0, 1] that indicates how many of the circuit's qubits have a mapping
+        defined. For example, if 3/4 of the qubits are mapped, this property is `0.75`.
+        """
+        return self.layout.size / self.circuit.num_qubits
