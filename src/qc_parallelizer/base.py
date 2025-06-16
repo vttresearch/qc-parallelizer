@@ -12,7 +12,6 @@ class Types:
     Backend = qiskit.providers.BackendV2
     Result = qiskit.result.result.Result
     Qubit = qiskit.circuit.Qubit
-    OptimizationStrategy = Literal["minimize", "softconstr", "none", None]
 
 
 class Exceptions:
