@@ -1,8 +1,8 @@
 import functools
 import itertools
 import operator
-from collections.abc import Sequence
 from collections import Counter
+from collections.abc import Sequence
 
 import qiskit
 import qiskit.providers
