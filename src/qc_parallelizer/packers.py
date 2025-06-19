@@ -10,10 +10,9 @@ import rustworkx
 import z3
 
 from .base import Exceptions
-from .circuitbin import CircuitBin
-from .generic import circuittools, generic
-from .generic.layouts import CircuitWithLayout, IndexedLayout
-from .generic.logging import Log
+from .bins.circuitbin import CircuitBin
+from .extensions import Circuit
+from .util import IndexedLayout, Log
 
 
 class PackerBase:
@@ -89,13 +88,13 @@ class PackerBase:
             # On each iteration, expand `blocked` with each blocked qubits' neighbors.
             current, blocked = blocked, blocked.copy()
             for taken in current:
-                blocked |= bin.backend_neighbor_sets[taken]
+                blocked |= bin.backend.neighbor_sets[taken]
         return blocked
 
     def evaluate(
         self,
         bin: CircuitBin,
-        circuit: CircuitWithLayout,
+        circuit: Circuit,
     ) -> Any:
         """
         Evaluates how "good" the packing is in the given bin after placing the given circuit. The
@@ -107,21 +106,19 @@ class PackerBase:
         "consume", including those that are at the edge of the circuit.
         """
         taken_qubits = bin.taken_indices
-        circuit_qubits = circuit.layout.pkeys
+        circuit_qubits = circuit.layout.pindices
         blocked_couplers = {
-            (a, b) for a, b in bin.backend_edges_unique if a in taken_qubits or b in taken_qubits
+            (a, b) for a, b in bin.backend.edges if a in taken_qubits or b in taken_qubits
         }
         circuit_couplers = {
-            (a, b)
-            for a, b in bin.backend_edges_unique
-            if a in circuit_qubits or b in circuit_qubits
+            (a, b) for a, b in bin.backend.edges if a in circuit_qubits or b in circuit_qubits
         }
         return -len(circuit_couplers - blocked_couplers)
 
     def find_layout(
         self,
         bin: CircuitBin,
-        circuit: CircuitWithLayout,
+        circuit: Circuit,
         blocked: set[int],
         /,
     ) -> IndexedLayout | None:
@@ -218,11 +215,11 @@ class SMTPackers:
         def _find_layout(
             self,
             bin: CircuitBin,
-            circuit: CircuitWithLayout,
+            circuit: Circuit,
             blocked: set[int],
             seed: int,
         ):
-            if circuit.circuit.num_qubits > bin.backend.num_qubits - len(blocked):
+            if circuit.num_qubits > bin.backend.num_qubits - len(blocked):
                 return None
 
             Log.debug("Attempting constraint-based layout.")
@@ -236,7 +233,7 @@ class SMTPackers:
                 Log.debug("No timeout defined for solver.")
 
             placements = [
-                [z3.Bool(f"{v}on{p}") for v in range(circuit.circuit.num_qubits)]
+                [z3.Bool(f"{v}on{p}") for v in range(circuit.num_qubits)]
                 for p in range(bin.backend.num_qubits)
             ]
             Log.debug(f"Defined |{len(placements)}x{len(placements[0])}| boolean constants.")
@@ -254,7 +251,7 @@ class SMTPackers:
                         # PbEq expects variables and weights, so we wrap each boolean with a unit
                         # weight.
                         z3.PbEq([(p[v], 1) for p in placements], 1)
-                        for v in range(circuit.circuit.num_qubits)
+                        for v in range(circuit.num_qubits)
                     ]
                 ),
             )
@@ -270,19 +267,19 @@ class SMTPackers:
             solver.add(blocking_constraints := [v == False for b in blocked for v in placements[b]])
 
             # If two qubits couple virtually, they must also couple physically.
-            virt_edges = set(generic.get_edges(circuittools.get_neighbor_sets(circuit.circuit)))
+            virt_edges = circuit.get_edges()
             coupling_constraints = [
                 z3.Or(
                     z3.And(placements[pa][va] == True, placements[pb][vb] == True)
-                    for pa, pb in bin.backend_edges
+                    for pa, pb in bin.backend.edges_bidir
                 )
                 for va, vb in virt_edges
             ]
 
             if self.min_intra_distance != 0:
                 # If two qubits don't couple virtually, they cannot couple physically.
-                for va in range(circuit.circuit.num_qubits):
-                    for vb in range(va + 1, circuit.circuit.num_qubits):
+                for va in range(circuit.num_qubits):
+                    for vb in range(va + 1, circuit.num_qubits):
                         if (va, vb) not in virt_edges:
                             coupling_constraints.append(
                                 z3.And(
@@ -290,7 +287,7 @@ class SMTPackers:
                                         placements[pa][va] == True,
                                         placements[pb][vb] == False,
                                     )
-                                    for pa, pb in bin.backend_edges
+                                    for pa, pb in bin.backend.edges
                                 ),
                             )
 
@@ -378,12 +375,12 @@ class SMTPackers:
         SMT packer that minimizes the number of used couplers directly.
         """
 
-        def optimize(self, solver, placements, bin, blocked):
+        def optimize(self, solver, placements, bin: CircuitBin, blocked):
             Log.debug("Using coupler usage minimization.")
 
             phys_qubit_used = [z3.AtLeast(*v_placements, 1) for v_placements in placements]
             coupler_used = [
-                z3.Or(phys_qubit_used[a], phys_qubit_used[b]) for a, b in bin.backend_edges
+                z3.Or(phys_qubit_used[a], phys_qubit_used[b]) for a, b in bin.backend.edges_bidir
             ]
             solver.minimize(z3.Sum(coupler_used))
 
@@ -393,15 +390,17 @@ class SMTPackers:
         connectivities. In other words, using a more connected qubit costs more.
         """
 
-        def optimize(self, solver, placements, bin, blocked):
+        def optimize(self, solver, placements, bin: CircuitBin, blocked):
             Log.debug("Using weighted soft constraints.")
 
             phys_qubit_used = [z3.AtLeast(*v_placements, 1) for v_placements in placements]
-            phys_nb_counts = generic.get_neighbor_counts(bin.backend_edges, exclude=blocked)
             for p_index, p_used in enumerate(phys_qubit_used):
                 # This physical qubit can be used, but with a penalty that depends on how many
                 # non-blocked qubits it couples with.
-                solver.add_soft(p_used == False, str(phys_nb_counts[p_index]))
+                solver.add_soft(
+                    p_used == False,
+                    str(len(bin.backend.neighbor_sets[p_index] - blocked)),
+                )
 
 
 class VF2Packers:
@@ -429,15 +428,13 @@ class VF2Packers:
             self.id_order = id_order
             self.call_limit = call_limit
 
-        def layout_generator(self, bin: CircuitBin, circuit: CircuitWithLayout, blocked: set[int]):
+        def layout_generator(self, bin: CircuitBin, circuit: Circuit, blocked: set[int]):
             phys = rustworkx.PyGraph(multigraph=False)
             phys.add_nodes_from(range(bin.backend.num_qubits))
-            phys.add_edges_from_no_data(bin.backend_edges)
+            phys.add_edges_from_no_data(bin.backend.edges_bidir)
             virt = rustworkx.PyGraph(multigraph=False)
-            virt.add_nodes_from(range(circuit.circuit.num_qubits))
-            virt.add_edges_from_no_data(
-                generic.get_edges(circuittools.get_neighbor_sets(circuit.circuit)),
-            )
+            virt.add_nodes_from(range(circuit.num_qubits))
+            virt.add_edges_from_no_data(circuit.get_edges(bidir=True))
 
             Log.debug(
                 lambda: (
@@ -473,8 +470,8 @@ class VF2Packers:
         Finds any valid layout. Very efficient, but results in possibly non-optimal packings.
         """
 
-        def find_layout(self, bin, circuit, blocked):
-            if circuit.circuit.num_qubits > bin.backend.num_qubits - len(blocked):
+        def find_layout(self, bin: CircuitBin, circuit: Circuit, blocked: set[int]):
+            if circuit.num_qubits > bin.backend.num_qubits - len(blocked):
                 return None
             Log.debug("Invoking VF2++ to determine the first valid layout.")
             try:
@@ -503,8 +500,8 @@ class VF2Packers:
             super().__init__(**kwargs)
             self.timeout = timeout
 
-        def find_layout(self, bin, circuit, blocked):
-            if circuit.circuit.num_qubits > bin.backend.num_qubits - len(blocked):
+        def find_layout(self, bin: CircuitBin, circuit: Circuit, blocked):
+            if circuit.num_qubits > bin.backend.num_qubits - len(blocked):
                 return None
             Log.debug("Invoking VF2++ and iterating over results to find optimal layout.")
 
@@ -528,7 +525,7 @@ class VF2Packers:
                         Log.warn("Search interrupted by timeout.")
                         break
                 layout = IndexedLayout(p2v=layout)
-                score = self.evaluate(bin, CircuitWithLayout(circuit.circuit, layout))
+                score = self.evaluate(bin, circuit.with_layout(layout))
                 heapq.heappush(solution_heap, (-score, i, layout))
 
             Log.debug(f"Found ${len(solution_heap)} possible placement$.")

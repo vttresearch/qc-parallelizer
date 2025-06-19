@@ -1,3 +1,3 @@
-from . import visualization
-from .generic.logging import Log
 from .parallelizer import describe, execute, rearrange
+from .results import visualization
+from .util import Log

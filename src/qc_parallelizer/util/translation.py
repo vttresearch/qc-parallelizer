@@ -4,22 +4,21 @@ import qiskit
 import qiskit.providers
 import qiskit.transpiler
 
-from .base import Exceptions, Types
-from .generic import backendtools, circuittools, generic
-from .generic.layouts import CircuitWithLayout
-from .generic.logging import Log
+from qc_parallelizer.base import Exceptions
+from qc_parallelizer.extensions import Backend, Circuit
+from qc_parallelizer.util import Log
 
 
 def translate_for_backend(
-    circuit: CircuitWithLayout | qiskit.QuantumCircuit,
-    backend: Types.Backend,
+    circuit: Circuit | qiskit.QuantumCircuit,
+    backend: Backend | qiskit.providers.BackendV2,
     optimization_level: int = 1,
     **pm_kwargs,
-) -> CircuitWithLayout | None:
+) -> Circuit | None:
     """
-    Translates or unrolls a circuit for the given backend. Three-qubit or larger gates will be
-    translated to multiple up-to-two-qubit gates, after which all gates will be translated to only
-    operations that the backend natively supports.
+    Translates a circuit for the given backend. Three-qubit or larger gates will be translated to
+    multiple up-to-two-qubit gates, after which all gates will be translated to only operations that
+    the backend natively supports.
 
     Args:
         pm_kwargs:
@@ -30,10 +29,10 @@ def translate_for_backend(
     """
 
     if isinstance(circuit, qiskit.QuantumCircuit):
-        circuit = CircuitWithLayout(circuit, None)
+        circuit = Circuit(circuit)
 
     Log.debug(
-        f"Translating |{circuit.circuit.num_qubits}-qubit| circuit for backend |'{backend.name}'|.",
+        f"Translating |{circuit.num_qubits}-qubit| circuit for backend |'{backend.name}'|.",
     )
 
     # We create a fake target with couplers exactly where they are needed by the circuit. This way
@@ -43,17 +42,18 @@ def translate_for_backend(
         basis_gates=backend.operation_names,
         num_qubits=backend.num_qubits,
         coupling_map=qiskit.transpiler.CouplingMap(
-            couplinglist=generic.get_edges(circuittools.get_neighbor_sets(circuit.circuit)),
+            couplinglist=circuit.get_edges(),
         )
-        if circuit.circuit.num_nonlocal_gates() > 0
+        if circuit.num_nonlocal_gates > 0
         else None,
         # For some reason circuits with only 1-qubit gates fail without this correction.
     )
 
     pm = qiskit.transpiler.generate_preset_pass_manager(
         optimization_level=optimization_level,
-        backend=backend,
+        backend=backend.unwrap() if isinstance(backend, Backend) else backend,
         target=target,
+        **pm_kwargs,
     )
 
     # These have to be manually removed, but this seems to work fine.
@@ -61,7 +61,7 @@ def translate_for_backend(
     pm.routing = None
 
     try:
-        return CircuitWithLayout(pm.run(circuit.circuit), circuit.layout)
+        return Circuit(pm.run(circuit.unwrap()), circuit.layout)
     except (qiskit.transpiler.TranspilerError, KeyError) as error:
         Log.warn(f"Could not translate circuit for backend due to error |'{error}'|.")
         return None
@@ -72,16 +72,16 @@ class CircuitBackendTranslations:
     Represents a list of circuits translated against a list of backends.
     """
 
-    translation_table: dict[int, dict[int, CircuitWithLayout]]
-    arch_backends: dict[int, list[qiskit.providers.BackendV2]]
-    optimal_backends: dict[int, list[Types.Backend]]
+    translation_table: dict[int, dict[int, Circuit]]
+    arch_backends: dict[int, list[Backend]]
+    optimal_backends: dict[int, list[Backend]]
 
     def __init__(
         self,
-        trans_table: dict[int, dict[int, CircuitWithLayout]],
-        backend_arches: dict[Types.Backend, int],
-        arch_backends: dict[int, list[Types.Backend]],
-        optimal_backends: dict[int, list[Types.Backend]],
+        trans_table: dict[int, dict[int, Circuit]],
+        backend_arches: dict[Backend, int],
+        arch_backends: dict[int, list[Backend]],
+        optimal_backends: dict[int, list[Backend]],
     ):
         self.translation_table = trans_table
         self.backend_arches = backend_arches
@@ -91,8 +91,8 @@ class CircuitBackendTranslations:
     @classmethod
     def generate(
         cls,
-        circuits: Sequence[CircuitWithLayout],
-        backends: Sequence[Types.Backend],
+        circuits: Sequence[Circuit],
+        backends: Sequence[Backend],
         **kwargs,
     ):
         """
@@ -106,12 +106,12 @@ class CircuitBackendTranslations:
         See the `CircuitBackendTranslations` class for more information on the returned object.
         """
 
-        circuit_hashes = [circuittools.circuit_hash(circuit.circuit) for circuit in circuits]
+        circuit_hashes = [circuit.hash() for circuit in circuits]
 
-        backend_arches = {backend: backendtools.arch_hash(backend) for backend in backends}
-        arch_backends: dict[int, list[Types.Backend]] = {}
-        for backend, arch in backend_arches.items():
-            arch_backends.setdefault(arch, []).append(backend)
+        backend_arches = {backend: backend.arch_hash for backend in backends}
+        arch_backends: dict[int, list[Backend]] = {}
+        for backend in backends:
+            arch_backends.setdefault(backend.arch_hash, []).append(backend)
 
         Log.debug(
             lambda: (
@@ -120,7 +120,7 @@ class CircuitBackendTranslations:
             ),
         )
 
-        def translation_helper(backend: Types.Backend):
+        def translation_helper(backend: Backend):
             """
             Generates translations for the circuit against the given backend. Filters out failed
             translations, which would otherwise be None.
@@ -158,7 +158,7 @@ class CircuitBackendTranslations:
 
         optimal_depths = {
             circuit_hash: min(
-                trans_circuits[circuit_hash].circuit.depth()
+                trans_circuits[circuit_hash].depth
                 for trans_circuits in translation_table.values()
                 if circuit_hash in trans_circuits
             )
@@ -170,7 +170,7 @@ class CircuitBackendTranslations:
                 arch
                 for arch, trans_circuits in translation_table.items()
                 if circuit_hash in trans_circuits
-                if trans_circuits[circuit_hash].circuit.depth() == optimal_depths[circuit_hash]
+                if trans_circuits[circuit_hash].depth == optimal_depths[circuit_hash]
             ]
             for circuit_hash in translated_circuit_set
         }
@@ -186,20 +186,22 @@ class CircuitBackendTranslations:
 
     def get(
         self,
-        circuit: CircuitWithLayout,
-        backend: qiskit.providers.BackendV2,
-    ) -> CircuitWithLayout:
+        circuit: Circuit,
+        backend: Backend,
+    ) -> Circuit:
         """
         Returns the translation for the given circuit against the given backend.
         """
 
-        backend_hash = backendtools.arch_hash(backend)
-        circuit_hash = circuittools.circuit_hash(circuit.circuit)
-        return self.translation_table[backend_hash][circuit_hash]
+        return self.translation_table[backend.arch_hash][circuit.hash()]
 
-    def optimal_backends_for(self, circuit: CircuitWithLayout) -> list[qiskit.providers.BackendV2]:
-        circuit_hash = circuittools.circuit_hash(circuit.circuit)
-        return self.optimal_backends.get(circuit_hash, [])
+    def optimal_backends_for(self, circuit: Circuit) -> list[Backend]:
+        """
+        Returns optimal backends for circuit. In a set of backends, the backends that can natively
+        execute the circuit with the lowest transpiled depth are considered optimal.
+        """
+
+        return self.optimal_backends.get(circuit.hash(), [])
 
     def __str__(self):
         return (

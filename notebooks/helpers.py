@@ -6,7 +6,7 @@ import qiskit.providers
 import qiskit.transpiler
 import qiskit.visualization
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from qc_parallelizer.generic.layouts import IndexedLayout
+from qc_parallelizer.util import IndexedLayout
 
 
 def plot_circuits(

@@ -1,10 +1,8 @@
-import functools
+import warnings
 
 import qiskit
-
-from .base import Exceptions, Types
-from .generic import backendtools, circuittools
-from .generic.layouts import CircuitWithLayout
+from qc_parallelizer.base import Exceptions, Types
+from qc_parallelizer.extensions import Backend, Circuit
 
 
 class CircuitBin:
@@ -14,9 +12,9 @@ class CircuitBin:
     defines physical-virtual qubit mappings.
     """
 
-    def __init__(self, backend: Types.Backend):
+    def __init__(self, backend: Backend):
         self.backend = backend
-        self.circuits: list[CircuitWithLayout] = []
+        self.circuits: list[Circuit] = []
         self.phys_assignments: dict[int, tuple[int, int] | None] = {
             i: None for i in range(backend.num_qubits)
         }
@@ -44,10 +42,6 @@ class CircuitBin:
         backend_id = f"{hash(self.backend.name):03x}"[-3:]
         return f"{backend_id}-{self.backend.num_qubits}qb-{len(self.circuits)}c"
 
-    @functools.cached_property
-    def backend_neighbor_sets(self) -> list[set[int]]:
-        return backendtools.get_neighbor_sets(self.backend)
-
     @property
     def num_free(self):
         return len(self.free_indices)
@@ -68,34 +62,13 @@ class CircuitBin:
     def taken_indices(self) -> set[int]:
         return {k for k, v in self.phys_assignments.items() if v is not None}
 
-    @functools.cache
-    def backend_has_edge(self, from_, to) -> bool:
-        """
-        Returns True if the backend has a coupler between the given qubit indices. This does not
-        respect directed couplers, so each coupler is considered to go both ways.
-        """
-        edges = self.backend.coupling_map.get_edges()
-        return (from_, to) in edges or (to, from_) in edges
-
-    @functools.cache
-    def backend_coupling_distance(self, from_, to) -> int:
-        return self.backend.coupling_map.distance(from_, to)
-
-    @functools.cached_property
-    def backend_edges(self) -> list[tuple[int, int]]:
-        return backendtools.get_edges(self.backend, bidir=True)
-
-    @functools.cached_property
-    def backend_edges_unique(self) -> list[tuple[int, int]]:
-        return backendtools.get_edges(self.backend, bidir=False)
-
-    def compatible(self, circuit: CircuitWithLayout) -> bool:
+    def compatible(self, circuit: Circuit) -> bool:
         """
         Checks if the given circuit and layout are compatible with the bin in its current state.
         This is only the case if there are enough free qubits and all physical qubits of the layout
         are still free.
         """
-        if self.num_free < circuit.circuit.num_qubits:
+        if self.num_free < circuit.num_qubits:
             return False
         if circuit.layout.size > 0:
             taken = self.taken_indices
@@ -104,7 +77,7 @@ class CircuitBin:
                     return False
         return True
 
-    def place(self, circuit: CircuitWithLayout):
+    def place(self, circuit: Circuit):
         """
         Attempts to place circuit into this bin. Returns True on success, False on failure (if the
         circuit is not compatible).
@@ -119,9 +92,71 @@ class CircuitBin:
             self.phys_assignments[phys_index] = (circuit_index, virt_index)
 
     def realize(self) -> qiskit.QuantumCircuit:
-        return circuittools.combine_for_backend(self.circuits, self.backend, name=self.label)
+        host_circuit = qiskit.QuantumCircuit(
+            self.backend.num_qubits,
+            metadata={"hosted_circuits": []},
+            name=self.label,
+        )
 
-    def __getitem__(self, index) -> CircuitWithLayout:
+        for index, subcircuit in enumerate(self.circuits):
+            creg_mapping = {}
+            for old_reg in subcircuit.cregs:
+                new_reg = qiskit.ClassicalRegister(old_reg.size, name=f"circ{index}.{old_reg.name}")
+                for i in range(old_reg.size):
+                    creg_mapping[old_reg[i]] = new_reg[i]
+                host_circuit.add_register(new_reg)
+
+            qreg_indices = {
+                virt_qubit: subcircuit.index_of(virt_qubit) for virt_qubit in subcircuit.qubits
+            }
+
+            qreg_mapping = {
+                virt_qubit: host_circuit.qubits[subcircuit.layout.v2p[qreg_indices[virt_qubit]]]
+                for virt_qubit in subcircuit.qubits
+            }
+
+            couplers = [
+                (
+                    min(subcircuit.layout.v2p[a], subcircuit.layout.v2p[b]),
+                    max(subcircuit.layout.v2p[a], subcircuit.layout.v2p[b]),
+                )
+                for a, b in subcircuit.get_edges()
+            ]
+
+            host_circuit.metadata["hosted_circuits"].append(
+                {
+                    "name": subcircuit.name,
+                    "metadata": subcircuit.metadata,
+                    "qubits": subcircuit.layout.to_physical_list(),
+                    "couplers": couplers,
+                    "registers": {
+                        "clbit": {"sizes": {f"{reg.name}": reg.size for reg in subcircuit.cregs}},
+                    },
+                },
+            )
+
+            for operation, qubits, clbits in subcircuit.operations:
+                missing_qubit = any(qubit not in qreg_mapping for qubit in qubits)
+                missing_clbit = any(clbit not in creg_mapping for clbit in clbits)
+                if missing_qubit or missing_clbit:
+                    warnings.warn(
+                        (
+                            f"Operation '{operation.name}' skipped while merging circuits. Some of "
+                            f"its operands ({qubits if missing_qubit else clbits}) were not found "
+                            f"in the register mapping "
+                            f"({qreg_mapping if missing_qubit else creg_mapping})."
+                        ),
+                    )
+                    continue
+                host_circuit.append(
+                    operation,
+                    [qreg_mapping[qubit] for qubit in qubits],
+                    [creg_mapping[clbit] for clbit in clbits],
+                )
+
+        return host_circuit
+
+    def __getitem__(self, index) -> Circuit:
         return self.circuits[index]
 
     def __iter__(self):

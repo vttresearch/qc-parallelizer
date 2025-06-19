@@ -4,8 +4,7 @@ import itertools
 import qiskit
 import qiskit.qobj
 import qiskit.result.models
-
-from .base import Exceptions, Types
+from qc_parallelizer.base import Exceptions, Types
 
 
 def split_results(result: Types.Result):
@@ -46,7 +45,7 @@ def split_results(result: Types.Result):
                     list(circuit["registers"]["clbit"]["sizes"].values())
                     for circuit in original_circuits
                 ]
-                indices = [
+                indices: list[int] = [
                     original_circuit["metadata"]["index"] for original_circuit in original_circuits
                 ]
             except KeyError as error:

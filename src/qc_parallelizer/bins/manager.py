@@ -2,36 +2,33 @@ import heapq
 from collections.abc import Generator, Sequence
 from typing import Any
 
-import qiskit
+from qc_parallelizer.base import Exceptions
+from qc_parallelizer.extensions import Backend, Circuit
+from qc_parallelizer.packers import PackerBase
+from qc_parallelizer.util import Log
+from qc_parallelizer.util.translation import CircuitBackendTranslations
 
-from .base import Exceptions, Types
 from .circuitbin import CircuitBin
-from .generic.layouts import CircuitWithLayout
-from .generic.logging import Log
-from .packers import PackerBase
-from .translation import CircuitBackendTranslations
 
 
 class CircuitBinManager:
-    backends: Sequence[Types.Backend]
-    costs: dict[Types.Backend, float]
-    bins: dict[Types.Backend, list[CircuitBin]]
+    backends: Sequence[Backend]
+    bins: dict[Backend, list[CircuitBin]]
     packer: PackerBase
 
     def __init__(
         self,
-        backends: Sequence[tuple[Types.Backend, float]],
+        backends: Sequence[Backend],
         packer: PackerBase,
     ):
-        self.backends = [backend for backend, _ in backends]
-        self.costs = {backend: cost for backend, cost in backends}
-        self.bins = {backend: [] for backend, _ in backends}
+        self.backends = backends
+        self.bins = {backend: [] for backend in backends}
         self.packer = packer
 
     def generate_candidate_bins(
         self,
-        optimal_backends: dict[Types.Backend, CircuitWithLayout],
-    ) -> Generator[tuple[CircuitBin, CircuitWithLayout], None, None]:
+        optimal_backends: dict[Backend, Circuit],
+    ) -> Generator[tuple[CircuitBin, Circuit], None, None]:
         candidates: list[CircuitBin] = []
         max_bins = self.packer.max_bins_per_backend or float("inf")
 
@@ -66,7 +63,7 @@ class CircuitBinManager:
         for bin in sorted(
             candidates,
             key=lambda cb: (
-                len(self.bins[cb.backend]) * self.costs[cb.backend],
+                len(self.bins[cb.backend]) * cb.backend.cost,
                 cb.size == 0,
                 cb.size,
             ),
@@ -75,7 +72,7 @@ class CircuitBinManager:
 
     def place_circuit(
         self,
-        circuit: CircuitWithLayout,
+        circuit: Circuit,
         translations: CircuitBackendTranslations,
     ):
         optimal_backends = {
@@ -85,7 +82,7 @@ class CircuitBinManager:
 
         Log.debug("Attempting to place next circuit in bin set.")
 
-        candidate_placements: list[tuple[Any, CircuitBin, CircuitWithLayout]] = []
+        candidate_placements: list[tuple[Any, CircuitBin, Circuit]] = []
         max_candidates = self.packer.max_candidates or float("inf")
 
         for candidate_bin, translated in self.generate_candidate_bins(optimal_backends):
@@ -101,7 +98,7 @@ class CircuitBinManager:
                 continue
 
             Log.debug("Bin is suitable for circuit.")
-            completed_circuit = CircuitWithLayout(translated.circuit, completed_layout)
+            completed_circuit = translated.with_layout(completed_layout)
 
             rating = self.packer.evaluate(candidate_bin, completed_circuit)
             Log.debug(f"Got rating |{rating}| for placement.")
@@ -125,7 +122,7 @@ class CircuitBinManager:
 
     def place(
         self,
-        circuits: list[CircuitWithLayout],
+        circuits: list[Circuit],
         allow_ooe: bool,
     ):
         if allow_ooe:
@@ -139,13 +136,13 @@ class CircuitBinManager:
             circuits.sort(
                 key=lambda circuit: (
                     -circuit.layout.size,
-                    circuit.circuit.num_connected_components() / circuit.circuit.num_qubits,
-                    -circuit.circuit.num_qubits,
+                    circuit.num_connected_components / circuit.num_qubits,
+                    -circuit.num_qubits,
                 ),
             )
 
-            Log.debug(f"Sorted order: |{[c.circuit.metadata['index'] for c in circuits]}|")
-            Log.debug(f"Qubit counts: |{[c.circuit.num_qubits for c in circuits]}|")
+            Log.debug(f"Sorted order: |{[c.metadata['index'] for c in circuits]}|")
+            Log.debug(f"Qubit counts: |{[c.num_qubits for c in circuits]}|")
             Log.debug(f"Layout sizes: |{[c.layout.size for c in circuits]}|")
 
         Log.debug("Generating circuit-backend translation table.")
@@ -166,7 +163,7 @@ class CircuitBinManager:
                 ),
             )
 
-    def realize(self) -> dict[Types.Backend, Sequence[qiskit.QuantumCircuit]]:
+    def realize(self) -> dict[Backend, Sequence[Circuit]]:
         """
         Realizes or constructs the host circuits from bins that this manager tracks.
         """

@@ -20,7 +20,8 @@ import tempfile
 import time
 
 import qc_parallelizer as parallelizer
-from utils import build_circuit_list, fake_50qb_backend_cluster
+from qc_parallelizer import packers
+from utils import build_circuit_list, fake_54qb_backend_cluster
 
 # Enable/disable ANSI colors depending on output type (or user preference)
 if os.isatty(0) and "--no-color" not in sys.argv:
@@ -122,7 +123,11 @@ def init_benchmark():
     return prefix_print
 
 
-def run_single(circuits_string: str, backends, show: bool = False):
+def get_packer(name: str):
+    return eval(f"packers.{name}")
+
+
+def run_single(circuits_string: str, backends, packer: str, show: bool = False):
     global benchmarks_run
     print = init_benchmark()
 
@@ -130,8 +135,9 @@ def run_single(circuits_string: str, backends, show: bool = False):
     circuits = build_circuit_list(circuits_string, force_list=True)
     print(f"rearranging {Color.Cyan}{len(circuits)} circuits{Color.Reset}...")
 
+    packer_ = get_packer(packer)
     start = time.time()
-    rearranged = parallelizer.rearrange(circuits, backends)
+    rearranged = parallelizer.rearrange(circuits, backends, packer=packer_)
     duration = time.time() - start
 
     print(
@@ -165,20 +171,22 @@ def run_single(circuits_string: str, backends, show: bool = False):
 def profile_multiple(
     circuits_string: list[str],
     backends: list,
+    packer: str,
     filename: str = "parallelizer.prof",
 ):
     circuit_lists = [build_circuit_list(cs) for cs in circuits_string]
+    packer_ = get_packer(packer)
     pr = cProfile.Profile()
     print("Profiling...")
     for circs in circuit_lists:
-        pr.runcall(parallelizer.rearrange, circs, backends)
+        pr.runcall(parallelizer.rearrange, circs, backends, packer=packer_)
     print("Done.")
     stats = pstats.Stats(pr)
     stats.sort_stats("cumtime").dump_stats(filename)
     print(f"Saved results in {filename}.")
 
 
-def search_for_maximum(gen_circuits_string, time_limit: float, backends):
+def search_for_maximum(gen_circuits_string, time_limit: float, backends, packer: str):
     global benchmarks_run
     print = init_benchmark()
 
@@ -192,11 +200,13 @@ def search_for_maximum(gen_circuits_string, time_limit: float, backends):
         flush=True,
     )
 
+    packer_ = get_packer(packer)
+
     @functools.cache
     def get_duration(index):
         circuits = build_circuit_list(gen_circuits_string(index))
         start = time.time()
-        parallelizer.rearrange(circuits, backends)
+        parallelizer.rearrange(circuits, backends, packer=packer_)
         return time.time() - start
 
     def search():
@@ -241,33 +251,34 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--show", action="store_true")
     parser.add_argument("-c", "--circuits", nargs="+")
     parser.add_argument("-n", "--num-qpus", type=int, default=2)
+    parser.add_argument("--packer", type=str, default="Defaults.Fast()")
     args = parser.parse_args()
 
-    backends = fake_50qb_backend_cluster(args.num_qpus)
+    backends = fake_54qb_backend_cluster(args.num_qpus)
 
     if args.log:
         parallelizer.Log.set_level("debug")
 
     if args.profile:
         circuits = args.circuits or ["20 star", "20 h 1"]
-        profile_multiple(circuits, backends)
+        profile_multiple(circuits, backends, args.packer)
     else:
         load_history()
         if args.circuits:
             for circuits in args.circuits:
-                run_single(circuits, backends, show=args.show)
+                run_single(circuits, backends, args.packer, show=args.show)
         else:
             print_title("Single timed runs (lower is better)")
-            run_single("1000 partial 20 10", backends)
-            run_single("1000 star", backends)
-            run_single("500 partial 20 10 500 star", backends)
-            run_single("500 star 500 partial 20 10", backends)
-            run_single("1000 h 1", backends)
-            run_single("1000 ghz 2", backends)
+            run_single("1000 partial 20 10", backends, args.packer)
+            run_single("1000 star", backends, args.packer)
+            run_single("500 partial 20 10 500 star", backends, args.packer)
+            run_single("500 star 500 partial 20 10", backends, args.packer)
+            run_single("1000 h 1", backends, args.packer)
+            run_single("1000 ghz 2", backends, args.packer)
             print_title("Time-limited runs (higher is better)")
-            search_for_maximum(lambda i: f"{i} star", 1.0, backends)
-            search_for_maximum(lambda i: f"{i} ghz 2", 1.0, backends)
-            search_for_maximum(lambda i: f"{i} h 1", 1.0, backends)
+            search_for_maximum(lambda i: f"{i} star", 1, backends, args.packer)
+            search_for_maximum(lambda i: f"{i} ghz 2", 1, backends, args.packer)
+            search_for_maximum(lambda i: f"{i} h 1", 1, backends, args.packer)
         print_title(f"{benchmarks_run} benchmark(s) finished!")
         save_history()
         print(f"\n{Color.Grey}Results have been saved into {save_filename}.{Color.Reset}")

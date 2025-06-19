@@ -4,13 +4,11 @@ import matplotlib
 import matplotlib.pyplot
 import qiskit
 import qiskit.visualization.utils
-
-from .base import Types
-from .generic import backendtools
+from qc_parallelizer.extensions import Backend, Circuit
 
 
 def plot_placements(
-    rearranged: dict[Types.Backend, Sequence[qiskit.QuantumCircuit]],
+    rearranged: dict[Backend, Sequence[Circuit]],
     figsize=None,
 ):
     """
@@ -49,15 +47,14 @@ def plot_placements(
     )
     for i, (backend, circuits) in enumerate(rearranged.items()):
         for j, circuit in enumerate(circuits):
-            edges = backendtools.get_edges(backend)
             qubit_indices = [h["qubits"] for h in circuit.metadata["hosted_circuits"]]
             coupler_lists = [h["couplers"] for h in circuit.metadata["hosted_circuits"]]
             qubit_colors = get_qubit_colors(qubit_indices, backend.num_qubits)
-            coupler_colors = get_coupler_colors(coupler_lists, edges)
+            coupler_colors = get_coupler_colors(coupler_lists, backend.edges)
             qiskit.visualization.plot_coupling_map(
                 num_qubits=backend.num_qubits,
                 qubit_coordinates=None,
-                coupling_map=edges,
+                coupling_map=backend.edges,
                 ax=axs[i, j],
                 planar=False,
                 qubit_size=80,

@@ -5,18 +5,18 @@ Base fixtures and other general definitions that are used in multiple tests.
 import itertools
 from inspect import signature
 
-import iqm.qiskit_iqm as iqm
 import qiskit
 from iqm.qiskit_iqm.fake_backends.fake_adonis import IQMFakeAdonis
 from iqm.qiskit_iqm.fake_backends.fake_aphrodite import IQMFakeAphrodite
 from iqm.qiskit_iqm.fake_backends.fake_apollo import IQMFakeApollo
+from qc_parallelizer.extensions import Backend
 
-fake_5qb_backend = IQMFakeAdonis()
-fake_20qb_backend = IQMFakeApollo()
-fake_50qb_backend = IQMFakeAphrodite()
+fake_5qb_backend = Backend(IQMFakeAdonis())
+fake_20qb_backend = Backend(IQMFakeApollo())
+fake_54qb_backend = Backend(IQMFakeAphrodite())
 
 
-def fake_50qb_backend_cluster(n: int):
+def fake_54qb_backend_cluster(n: int):
     return [IQMFakeAphrodite() for _ in range(n)]
 
 

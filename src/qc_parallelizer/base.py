@@ -1,5 +1,4 @@
 import qiskit
-import qiskit.circuit
 import qiskit.providers
 import qiskit.result
 import qiskit.transpiler
@@ -7,9 +6,8 @@ import qiskit.transpiler
 
 class Types:
     Layout = list | dict | qiskit.transpiler.Layout
-    Backend = qiskit.providers.BackendV2
     Result = qiskit.result.result.Result
-    Qubit = qiskit.circuit.Qubit
+    Job = qiskit.providers.JobV1
 
 
 class Exceptions:

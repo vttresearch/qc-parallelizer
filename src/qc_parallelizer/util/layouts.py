@@ -158,22 +158,29 @@ class IndexedLayout:
             self._p2v = dict(p2v)
         else:
             raise ValueError("only up to one mapping may be provided as an initializer")
+        self._validate()
+
+    def _validate(self):
+        try:
+            assert len(self.vindices) == len(self.pindices)
+        except AssertionError as error:
+            raise IndexError("mapping is not bijective") from error
 
     @property
     def size(self):
         """
-        Returns the size of the layout, excluding blocked qubits.
+        Returns the size of the layout, which is the number of mapped qubits.
         """
 
         return len(self.v2p)
 
     @property
-    def vkeys(self):
-        return self._v2p.keys()
+    def vindices(self):
+        return set(self._v2p.keys())
 
     @property
-    def pkeys(self):
-        return self._p2v.keys()
+    def pindices(self):
+        return set(self._p2v.keys())
 
     @property
     def v2p(self):
