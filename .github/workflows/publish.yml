@@ -30,8 +30,8 @@ jobs:
           fi
           echo "Creating release..."
           curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
             -d '{"tag_name": "$version", "name": "$version"}'
           echo "Done!"
   build:
