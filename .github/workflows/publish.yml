@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  create_tag:
+  create_release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -18,12 +18,12 @@ jobs:
             exit 1
           fi
           echo "Extracted version '$version'."
-          if [ $(git tag -l "$version") ]; then
-            echo "Version tag already exists."
+          latest=$(gh release list -L 1 --json tagName -q ".[].tagName")
+          if [ "$version" = "$latest" ]; then
+            echo "Version tag already exists. Canceling run."
             gh run cancel ${{ github.run_id }}
-            exit 1
+            exit 0
           fi
-          latest=$(git tag | tail -n 1)
           printf '%s\n%s\n' "$latest" "$version" | sort -V -C
           if [ $? -eq 1 ]; then
             echo "Version tag precedes latest ($latest)."
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-      - create_tag
+      - create_release
     environment:
       name: pypi
       url: https://pypi.org/p/qc-parallelizer
