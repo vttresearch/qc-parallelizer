@@ -5,7 +5,6 @@ from collections.abc import Sequence
 import qiskit
 import qiskit.providers
 from qc_parallelizer.base import Types
-from qc_parallelizer.extensions import Circuit
 from qc_parallelizer.util import Log
 
 from .postprocessing import split_results
@@ -25,13 +24,13 @@ class ParallelJob:
     by the `execute()` function.
     """
 
-    _jobs: Sequence[tuple[Circuit, qiskit.providers.JobV1]]
+    _jobs: Sequence[tuple[qiskit.QuantumCircuit, qiskit.providers.JobV1]]
     _raw_results: Sequence[Types.Result]
     _results: Sequence[Types.Result]
 
     def __init__(
         self,
-        jobs: Sequence[tuple[Circuit, qiskit.providers.JobV1]],
+        jobs: Sequence[tuple[qiskit.QuantumCircuit, qiskit.providers.JobV1]],
     ):
         self._jobs = jobs
         self._raw_results = []

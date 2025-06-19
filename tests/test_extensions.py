@@ -1,5 +1,7 @@
+from collections.abc import Sequence
+
 import qiskit
-from qc_parallelizer.extensions import Backend, Circuit
+from qc_parallelizer.extensions import Backend, Circuit, isnestedinstance, typestr
 from qc_parallelizer.util import IndexedLayout
 
 
@@ -42,3 +44,39 @@ class TestCircuitExtension:
 
         assert Circuit(circuit1).hash() != Circuit(circuit3).hash()
         assert Circuit(circuit1).hash(meta=False) == Circuit(circuit3).hash(meta=False)
+
+
+class TestTypingExtension:
+    def test_isnestedinstance(self):
+        testtype1 = Sequence[dict[int, set[str]]]
+
+        assert isnestedinstance([{0: {"foo", "bar"}}], testtype1)
+        assert not isnestedinstance([{0: {"foo", "bar"}}, "baz"], testtype1)
+        assert not isnestedinstance([{0: {1, 2}}], testtype1)
+        assert not isnestedinstance([{0: {"foo", "bar"}, "a": {"baz"}}], testtype1)
+
+        testtype2 = str | int | tuple[int, ...]
+
+        assert isnestedinstance("foo", testtype2)
+        assert isnestedinstance(123, testtype2)
+        assert isnestedinstance(
+            (
+                0,
+                1,
+                2,
+            ),
+            testtype2,
+        )
+        assert not isnestedinstance(
+            (
+                0,
+                "foo",
+            ),
+            testtype2,
+        )
+        assert not isnestedinstance(1.2, testtype2)
+
+    def test_typestr(self):
+        for testobj in ["foo", {1, "a"}, {0: "foo", 2: [1, 2]}, (0, 1, 2, 1.5), (0, 1, 2)]:
+            typ = typestr(testobj)
+            assert isnestedinstance(testobj, eval(typ)), f"{testobj} is not {typ}"

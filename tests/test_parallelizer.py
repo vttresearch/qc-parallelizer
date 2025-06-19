@@ -41,6 +41,7 @@ class TestTranspiling:
     def test_translating(self):
         circuit = qiskit.QuantumCircuit(3)
         circuit.h(0)
+        circuit.h(1)
         circuit.ccx(0, 1, 2)
 
         translated = translation.translate_for_backend(

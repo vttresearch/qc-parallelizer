@@ -1,3 +1,4 @@
+import typing
 from collections import Counter
 from collections.abc import Sequence
 
@@ -7,20 +8,24 @@ import qiskit.providers
 from . import packers
 from .base import Exceptions, Types
 from .bins.manager import CircuitBinManager
-from .extensions import Backend, Circuit
+from .extensions import Backend, Circuit, ensure_sequence, isnestedinstance
 from .results.paralleljob import ParallelJob
 from .util import Log
 
 
+class InputTypes:
+    Circuit = qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout] | Circuit
+    Circuits = Circuit | Sequence[Circuit]
+    Backend = qiskit.providers.BackendV2 | tuple[qiskit.providers.BackendV2, int | float] | Backend
+    Backends = Backend | Sequence[Backend]
+
+
 def rearrange(
-    circuits: Sequence[qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout]],
-    backends: qiskit.providers.BackendV2
-    | Backend
-    | Sequence[qiskit.providers.BackendV2 | Backend]
-    | Sequence[tuple[qiskit.providers.BackendV2, float] | Backend],
+    circuits: InputTypes.Circuits,
+    backends: InputTypes.Backends,
     allow_ooe: bool = True,
     packer: packers.PackerBase = packers.Defaults.Fast(),
-) -> dict[Backend, Sequence[Circuit]]:
+) -> dict[Backend, Sequence[qiskit.QuantumCircuit]]:
     """
     (Re)arranges a list of circuits into larger host circuits in preparation for parallel execution.
     Basically, this function combines multiple circuits into merged, wider circuits. How the
@@ -32,9 +37,9 @@ def rearrange(
     Args:
         circuits:
             A list of QuantumCircuit objects or (QuantumCircuit, Layout) tuples. The given circuit
-            objects are copied and not modified.
+            objects are copied and the originals are not modified.
         backends:
-            A Backend object, a list of Backend objects, or a list of (Backend, cost) tuples. The
+            A backend object, a list of backend objects, or a list of (backend, cost) tuples. The
             circuits will be rearranged onto these backends. In the third case, costs can be used to
             prioritize some backend by assigning lower cost to it. Backends with no associated cost
             are assumed to have unit cost (1).
@@ -54,66 +59,59 @@ def rearrange(
         modify its contents. The dict is passable as is to `execute()`.
     """
 
-    has_multiple_backends = False
-    if isinstance(backends, Sequence):
-        if len(backends) > 1:
-            has_multiple_backends = True
-    else:
-        backends = [backends]
+    # First, some military-grade input type checking and normalization.
 
-    has_layout_information = any(isinstance(circ, Sequence) for circ in circuits)
-
-    if has_layout_information and has_multiple_backends:
-        raise Exceptions.ParameterError(
-            "circuit layouts and multiple backends may not be specified simultaneously",
-        )
-
-    def normalize_backend(backend):
-        if isinstance(backend, Backend):
-            return backend
-        if isinstance(backend, qiskit.providers.BackendV2):
-            return Backend(backend, 1)
-        if isinstance(backend, Sequence) and len(backend) == 2:
-            return Backend(*backend)
-        raise Exceptions.ParameterError(
-            f"expected sequence of backends or (backend, cost) tuples, got '{backend}'",
-        )
-
-    normalized_backends = [normalize_backend(backend) for backend in backends]
+    circuits = ensure_sequence(circuits, InputTypes.Circuit)
 
     def normalize_circuit(circuit):
         if isinstance(circuit, Circuit):
             return circuit
         if isinstance(circuit, qiskit.QuantumCircuit):
             return Circuit(circuit, clone=True)
-        if isinstance(circuit, Sequence) and len(circuit) == 2:
+        if isnestedinstance(circuit, tuple[qiskit.QuantumCircuit, Types.Layout]):
             return Circuit(*circuit, clone=True)
-        raise Exceptions.ParameterError(
-            f"expected sequence of circuits or (circuit, layout) tuples, got '{circuit}'",
-        )
+        assert False, "unreachable code"
 
-    if not isinstance(circuits, Sequence):
-        circuits = [circuits]
-
-    indexed_circuits = []
+    normalized_circuits = []
     for circuit in circuits:
         if normalized := normalize_circuit(circuit):
             if normalized.num_qubits > 0:
                 normalized.metadata = {
                     "original_metadata": normalized.metadata,
-                    "index": len(indexed_circuits),
+                    "index": len(normalized_circuits),
                 }
-                indexed_circuits.append(normalized)
+                normalized_circuits.append(normalized)
+    circuits = normalized_circuits
+
+    # Then the same dance for backends.
+
+    backends = ensure_sequence(backends, InputTypes.Backend)
+
+    def normalize_backend(backend):
+        if isinstance(backend, Backend):
+            return backend
+        if isinstance(backend, qiskit.providers.BackendV2):
+            return Backend(backend, 1)
+        if isnestedinstance(backend, tuple[qiskit.providers.BackendV2, int | float]):
+            return Backend(*backend)
+        assert False, "unreachable code"
+
+    backends = [normalize_backend(backend) for backend in backends]
+
+    if any(circuit.layout.size > 0 for circuit in circuits) and len(backends) > 1:
+        raise Exceptions.ParameterError(
+            "circuit layouts and multiple backends may not be specified simultaneously",
+        )
 
     Log.info(
         (
-            f"Attempting to rearrange and distribute {len(indexed_circuits)} circuit(s) "
-            f"onto {len(normalized_backends)} backend(s)."
+            f"Attempting to rearrange and distribute {len(circuits)} circuit(s) onto "
+            f"{len(backends)} backend(s)."
         ),
     )
 
-    backend_bins = CircuitBinManager(normalized_backends, packer)
-    backend_bins.place(indexed_circuits, allow_ooe)
+    backend_bins = CircuitBinManager(backends, packer)
+    backend_bins.place(circuits, allow_ooe)
 
     Log.info("Circuit rearranging succeeded.")
 
@@ -121,11 +119,8 @@ def rearrange(
 
 
 def execute(
-    circuits: Sequence[qiskit.QuantumCircuit] | dict[Backend, Sequence[Circuit]],
-    backends: qiskit.providers.BackendV2
-    | Sequence[qiskit.providers.BackendV2]
-    | Sequence[tuple[qiskit.providers.BackendV2, float]]
-    | None = None,
+    circuits: InputTypes.Circuits | dict[Backend, Sequence[qiskit.QuantumCircuit]],
+    backends: InputTypes.Backends | None = None,
     rearrange_args: dict = {},
     run_args: dict = {},
 ) -> ParallelJob:
@@ -151,15 +146,25 @@ def execute(
         object, but deals with several jobs at once.
     """
 
-    if isinstance(circuits, Sequence):
+    if not isnestedinstance(circuits, dict[Backend, Sequence[qiskit.QuantumCircuit]]):
         if backends is None:
             raise Exceptions.MissingParameter(
-                "backends must be provided if the input is a list of circuits",
+                "backends must be provided if the given circuits have not been rearranged",
             )
         Log.debug("Provided circuits have not yet been rearranged. Rearranging.")
-        circuits = rearrange(circuits, backends, **rearrange_args)
+        circuits = rearrange(
+            typing.cast(InputTypes.Circuits, circuits),
+            backends,
+            **rearrange_args,
+        )
+    elif backends is not None:
+        raise Exceptions.ParameterError(
+            "backends were provided but circuits are already rearranged",
+        )
 
-    # TODO: batch?
+    circuits = typing.cast(dict[Backend, Sequence[qiskit.QuantumCircuit]], circuits)
+
+    # TODO: batch execute circuits whenever possible
     job_args = [
         (backend, circuit)
         for backend, circuit_list in circuits.items()
@@ -174,7 +179,7 @@ def execute(
     return ParallelJob(jobs)
 
 
-def describe(rearranged: dict[Backend, Sequence[Circuit]], color: bool = True):
+def describe(rearranged: dict[Backend, Sequence[qiskit.QuantumCircuit]], color: bool = True):
     """
     Returns a description of parallelized circuits. The result is a nicely formatted string that
     contains a list of backends and statistics for the number of circuits per each backend. The

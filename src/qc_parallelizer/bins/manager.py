@@ -2,6 +2,7 @@ import heapq
 from collections.abc import Generator, Sequence
 from typing import Any
 
+import qiskit
 from qc_parallelizer.base import Exceptions
 from qc_parallelizer.extensions import Backend, Circuit
 from qc_parallelizer.packers import PackerBase
@@ -163,7 +164,7 @@ class CircuitBinManager:
                 ),
             )
 
-    def realize(self) -> dict[Backend, Sequence[Circuit]]:
+    def realize(self) -> dict[Backend, Sequence[qiskit.QuantumCircuit]]:
         """
         Realizes or constructs the host circuits from bins that this manager tracks.
         """

@@ -1,11 +1,12 @@
 import qiskit
+import qiskit.circuit
 import qiskit.providers
 import qiskit.result
 import qiskit.transpiler
 
 
 class Types:
-    Layout = list | dict | qiskit.transpiler.Layout
+    Layout = list[int] | dict[int | qiskit.circuit.Qubit, int] | qiskit.transpiler.Layout
     Result = qiskit.result.result.Result
     Job = qiskit.providers.JobV1
 

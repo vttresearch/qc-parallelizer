@@ -20,9 +20,9 @@ functionality as a parallelized drop-in replacement for Qiskit's `backend.run()`
 
 As an example, consider a task that involves running a four-qubit circuit several times with
 different parameters. If each version of the circuit was naively submitted one by one to
-[the 54-qubit VTT Q50](https://qx.vtt.fi/docs/devices/q50.html), 50 qubits would remain unused in
-each job. This is very wasteful in terms of execution time, which then translates to unnecessary
-operational costs.
+[the 54-qubit VTT Q50](https://qx.vtt.fi/docs/devices/q50.html), 54 - 4 = 50 qubits would remain
+unused in each job. This is very wasteful in terms of execution time, which then translates to
+unnecessary operational costs.
 
 Instead, depending on the connectivity of the four-qubit circuit, at least nine such circuits can be
 packed into a single _host circuit_ that covers as many of Q50's qubits as it can. Optionally, the
@@ -101,6 +101,14 @@ pytest
 ```
 
 from the repository root. Additionally, there is a benchmarking script in the `tests/` directory.
+
+## Next steps
+
+- Add more tests!
+- Make `.execute()` batch jobs together.
+- Is there a more efficient bin packing system, potentially an offline one?
+- Allow circuits to share physical qubits for temporally non-overlapping parts. This requires reset
+  instructions, so maybe not relevant yet.
 
 ## Authors
 

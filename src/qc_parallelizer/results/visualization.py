@@ -8,7 +8,7 @@ from qc_parallelizer.extensions import Backend, Circuit
 
 
 def plot_placements(
-    rearranged: dict[Backend, Sequence[Circuit]],
+    rearranged: dict[Backend, Sequence[qiskit.QuantumCircuit]],
     figsize=None,
 ):
     """
