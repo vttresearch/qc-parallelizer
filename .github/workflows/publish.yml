@@ -29,10 +29,10 @@ jobs:
             exit 1
           fi
           echo "Creating release..."
-          curl -X POST \
+          curl --fail-with-body -X POST \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases" \
-            -d '{"tag_name": "$version", "name": "$version"}'
+            -d "{\"tag_name\": \"$version\", \"name\": \"$version\"}"
           echo "Done!"
   build:
     runs-on: ubuntu-latest
