@@ -9,6 +9,7 @@ jobs:
   create_tag:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - name: Tag version
         run: |
           version=$(sed -nE 's/^version = "([0-9v\.]+)"/\1/p' pyproject.toml)
