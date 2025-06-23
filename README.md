@@ -60,8 +60,6 @@ job = parallelizer.execute(circuits, backends=backends)
 # Fetch and handle results. This plots the first circuit's result histogram, for example.
 results = job.results()
 qiskit.visualization.plot_histogram(result[0].get_counts())
-# Information on the parallelization and underlying jobs is also available.
-print(f"On average, {job.info.avg_circuits_per_backend} circuits were placed per backend.")
 # The job object behaves just like a regular Qiskit Job object, but values are arrays.
 print("Job IDs:")
 for job_id in job.job_id():
