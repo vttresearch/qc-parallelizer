@@ -311,6 +311,15 @@ class SMTPackers:
 
             Log.debug("Checking solver model.")
 
+            # We could call solver.check() and solver.model(), but due to Python's implementation
+            # details, the random seed is effectively disregarded. See for example this comment:
+            # https://github.com/Z3Prover/z3/issues/6679#issuecomment-1503123308
+            # Below, we invoke Z3 in a separate process. Instead of file I/O, as recommended in the
+            # comment, we send the solver s-expression directly into the child process' stdin.
+
+            # TODO: If no random seed is provided, we could call the Python interface to avoid
+            # process spawning and I/O overhead.
+
             try:
                 z3_proc = subprocess.run(
                     [
@@ -321,11 +330,15 @@ class SMTPackers:
                         f"sat.random-seed={seed}",
                         f"timeout={self.timeout or 0}",
                     ],
-                    input=solver.sexpr().encode("utf-8"),
+                    input=sexpr.encode("utf-8"),
                     stdout=subprocess.PIPE,
                 )
             except Exception as error:
                 raise RuntimeError("could not run z3 process") from error
+
+            # The process outputs two things: the result, and the solution. The code below extracts
+            # them. If there is no solution (so result is either "unsat" or "unknown"), the
+            # extracted solution string (`model_str`) will be empty.
 
             try:
                 result, model_str = z3_proc.stdout.decode("utf-8").split("\n", 1)
@@ -334,7 +347,19 @@ class SMTPackers:
 
             Log.debug(f"Solver finished with result |'{result}'|.")
             if result == "sat":
-                pattern = re.compile(r"\(define-fun\s+\|(\S+)\|\s+\(\)\s+Bool\s+(true|false)\)")
+                # Now we know that there is a valid solution in the string. However, it is formatted
+                # as an s-expression with Bool function definitions, which we must parse. An example
+                # of a single-variable solution would be the following:
+                # (
+                #   (define-fun |variable name| () Bool
+                #    true)
+                # )
+                # The regex below extracts variable names and values with its match groups.
+
+                pattern = re.compile(r"\(define-fun\s+\|([^\|\\]+)\|\s+\(\)\s+Bool\s+(true|false)\)")
+
+                # All that then remains is restructuring a list of ("VonP", "true" | "false") pairs
+                # into a dict with V as keys and P as values, with only the true-valued pairs.
 
                 try:
                     model = {
