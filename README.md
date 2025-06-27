@@ -104,11 +104,19 @@ from the repository root. Additionally, there is a benchmarking script in the `t
 
 ## Next steps
 
-- Add more tests!
-- Make `.execute()` batch jobs together.
-- Is there a more efficient bin packing system, potentially an offline one?
+(In no particular order.)
+
+- Make layout/placement algorithms favour better-performing qubits, as specified by calibration
+  data. This could potentially be read from the given backend objects, or the user could specify
+  the data manually. This is of course possible with custom packers already.
+- Add more tests! Numerous configurations have been tested manually with notebooks but more should
+  be covered with unit testing.
+- Make `.execute()` batch jobs together. On backends with relatively long initialization times,
+  batching can make a big difference.
+- Is there a more efficient bin packing system? The problem is NP-hard, so this might require some
+  research on its own.
 - Allow circuits to share physical qubits for temporally non-overlapping parts. This requires reset
-  instructions, so maybe not relevant yet.
+  instructions and makes the problem even more complex, so this a step for the distant future.
 
 ## Authors
 
