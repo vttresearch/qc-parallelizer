@@ -4,7 +4,8 @@ from typing import Any
 import qiskit
 import qiskit.dagcircuit
 import qiskit.transpiler
-from qiskit.transpiler.preset_passmanagers.generate_preset_pass_manager import _parse_initial_layout
+
+from qc_parallelizer.extensions.typing import isnestedinstance
 
 
 def layout_to_dict(
@@ -12,35 +13,27 @@ def layout_to_dict(
     circuit: qiskit.QuantumCircuit,
 ) -> dict[int, int]:
     """
-    Given a qubit layout of basically any form that Qiskit understands, this function normalizes it
-    into a dictionary that contains virtual-physical index mappings. That is, keys represent the
-    virtual qubit indices in the circuit, and values represent the physical qubit indices in the
-    backend.
+    Given a qubit layout of basically any form, this function normalizes it into a dictionary that
+    contains virtual-physical index mappings. That is, keys represent the virtual qubit indices in
+    the circuit, and values represent the physical qubit indices in the backend.
 
     Note that if the layout cannot be resolved, an empty dict (`{}`) is returned, not None.
     """
 
-    if isinstance(layout, list):
-        # The Qiskit parser does not have information about registers, so we have to handle this
-        # case separately
-        # TODO: a list of something else, like Qubit objects, might also be given
-        layout = qiskit.transpiler.Layout.from_intlist(layout, *circuit.qregs)
-    elif isinstance(layout, IndexedLayout):
-        return layout.v2p
-    elif isinstance(layout, dict) and all(
-        isinstance(k, int) and isinstance(v, int) for k, v in layout.items()
-    ):
-        return layout
-    else:
-        # If not a list, we let the default parser do its thing - this handles Layout objects,
-        # dicts with Bit objects, and other formats
-        layout = _parse_initial_layout(layout)
-
-    # If the layout could not be determined, return an empty mapping
-    if not isinstance(layout, qiskit.transpiler.Layout):
+    if layout is None:
         return {}
+    if isinstance(layout, IndexedLayout):
+        return layout.v2p
+    if isnestedinstance(layout, dict[int, int]):
+        return layout
 
-    # Finally, return a mapping from virtual indices to physical indices
+    if isinstance(layout, dict):
+        layout = qiskit.transpiler.Layout(layout)
+    elif isnestedinstance(layout, list[int]):
+        layout = qiskit.transpiler.Layout.from_intlist(layout, *circuit.qregs)
+    else:
+        raise TypeError(f"invalid layout format (got '{layout}')")
+
     return {
         circuit.find_bit(qubit).index: physical_index
         for qubit, physical_index in layout.get_virtual_bits().items()

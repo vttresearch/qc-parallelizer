@@ -1,6 +1,6 @@
 [project]
 name = "qc-parallelizer"
-version = "1.3.1"
+version = "1.3.2"
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
     { name = "Henri Ahola", email = "firstname.lastname@vtt.fi" }
@@ -8,7 +8,7 @@ authors = [
 readme = "README.pypi.md"
 license = "MIT"
 requires-python = ">= 3.10"
-dependencies = [ "qiskit >= 1.0, < 1.3", "z3-solver >= 4.0.0.0", "rustworkx >= 0.16.0" ]
+dependencies = [ "qiskit >= 1.0, < 1.3", "z3-solver >= 4.0.0.0", "rustworkx >= 0.15.0" ]
 
 [project.urls]
 GitHub = "https://github.com/vttresearch/qc-parallelizer"

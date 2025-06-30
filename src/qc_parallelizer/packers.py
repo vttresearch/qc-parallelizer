@@ -356,7 +356,9 @@ class SMTPackers:
                 # )
                 # The regex below extracts variable names and values with its match groups.
 
-                pattern = re.compile(r"\(define-fun\s+\|([^\|\\]+)\|\s+\(\)\s+Bool\s+(true|false)\)")
+                pattern = re.compile(
+                    r"\(define-fun\s+\|([^\|\\]+)\|\s+\(\)\s+Bool\s+(true|false)\)",
+                )
 
                 # All that then remains is restructuring a list of ("VonP", "true" | "false") pairs
                 # into a dict with V as keys and P as values, with only the true-valued pairs.
@@ -456,10 +458,10 @@ class VF2Packers:
         def layout_generator(self, bin: CircuitBin, circuit: Circuit, blocked: set[int]):
             phys = rustworkx.PyGraph(multigraph=False)
             phys.add_nodes_from(range(bin.backend.num_qubits))
-            phys.add_edges_from_no_data(bin.backend.edges_bidir)
+            phys.add_edges_from_no_data(list(bin.backend.edges_bidir))
             virt = rustworkx.PyGraph(multigraph=False)
             virt.add_nodes_from(range(circuit.num_qubits))
-            virt.add_edges_from_no_data(circuit.get_edges(bidir=True))
+            virt.add_edges_from_no_data(list(circuit.get_edges(bidir=True)))
 
             Log.debug(
                 lambda: (
