@@ -1,5 +1,3 @@
-import warnings
-
 import iqm.qiskit_iqm as iqm
 import matplotlib.pyplot as plt
 import qiskit.providers
@@ -17,6 +15,7 @@ def plot_circuits(
     """
     Plots a (1D or 2D) list of circuits in a grid.
     """
+
     if len(circuits) == 0:
         raise ValueError("no circuits to plot")
 
@@ -62,40 +61,11 @@ def plot_histograms(counts: list[dict], figsize=None, **kwargs):
     plt.show()
 
 
-def plot_layouts(
-    circuits: dict[qiskit.providers.Backend, list[qiskit.QuantumCircuit]],
-    figsize=None,
-    **kwargs,
-):
-    """
-    TODO. Use at your own risk.
-    """
-    total = sum(len(c) for c in circuits.values())
-    fig, ax = plt.subplots(1, total, figsize=figsize)
-    left = 0
-    index = 0
-    for backend, circuit_list in circuits.items():
-        for circuit in circuit_list:
-            layout = IndexedLayout.from_trivial(circuit.num_qubits)
-            circuit._layout = qiskit.transpiler.TranspileLayout(  # type: ignore
-                layout.to_qiskit_layout(circuit),
-                layout.to_qiskit_layout(circuit).get_virtual_bits(),
-            )
-
-            subfig = qiskit.visualization.plot_circuit_layout(circuit, backend, **kwargs)
-            canvas = FigureCanvas(subfig)
-            canvas.draw()
-            ax[index].imshow(
-                canvas.buffer_rgba(),
-                extent=(left, left + 100, 0, 100),
-                origin="upper",
-            )
-            index += 1
-            left += 100
-    plt.show()
-
-
 def enable_logging(name: str):
+    """
+    Enables logging for a logger with `name`, at the DEBUG level, with a sensible log formatter.
+    """
+
     import logging
 
     logger = logging.getLogger(name)
