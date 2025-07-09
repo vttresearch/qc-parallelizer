@@ -9,7 +9,7 @@ from qc_parallelizer.packers import PackerBase
 from qc_parallelizer.util import Log
 from qc_parallelizer.util.translation import CircuitBackendTranslations
 
-from .circuitbin import CircuitBin
+from .bins import CircuitBin
 
 
 class CircuitBinManager:
@@ -28,15 +28,15 @@ class CircuitBinManager:
 
     def generate_candidate_bins(
         self,
-        optimal_backends: dict[Backend, Circuit],
+        optimal_translations: dict[Backend, Circuit],
     ) -> Generator[tuple[CircuitBin, Circuit], None, None]:
         candidates: list[CircuitBin] = []
         max_bins = self.packer.max_bins_per_backend or float("inf")
 
         Log.debug("Generating candidate bins for circuit.")
-        Log.debug(f"There are |{len(optimal_backends)}| optimal backend(s).")
+        Log.debug(f"There are |{len(optimal_translations)}| optimal translations(s).")
 
-        for backend, translated in optimal_backends.items():
+        for backend, translated in optimal_translations.items():
             bins = self.bins[backend]
 
             Log.debug(
@@ -69,14 +69,14 @@ class CircuitBinManager:
                 cb.size,
             ),
         ):
-            yield bin, optimal_backends[bin.backend]
+            yield bin, optimal_translations[bin.backend]
 
     def place_circuit(
         self,
         circuit: Circuit,
         translations: CircuitBackendTranslations,
     ):
-        optimal_backends = {
+        optimal_translations = {
             backend: translations.get(circuit=circuit, backend=backend)
             for backend in translations.optimal_backends_for(circuit)
         }
@@ -86,7 +86,7 @@ class CircuitBinManager:
         candidate_placements: list[tuple[Any, CircuitBin, Circuit]] = []
         max_candidates = self.packer.max_candidates or float("inf")
 
-        for candidate_bin, translated in self.generate_candidate_bins(optimal_backends):
+        for candidate_bin, translated in self.generate_candidate_bins(optimal_translations):
             Log.debug("Attempting to place circuit in bin.")
 
             blocked = self.packer.blocked(candidate_bin)

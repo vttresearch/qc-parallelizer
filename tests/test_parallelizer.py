@@ -16,7 +16,6 @@ class TestParallelizer:
             # A circuit with 30 qubits should not fit at all
             (build_circuit_list("1 h 30"), None),
             # Two circuits with 15 each should result in two circuits
-            # TODO!!! Why does this hang?
             (build_circuit_list("2 h 15"), {fake_20qb_backend: 2}),
             # But two circuits with 15 qubits but only 5 used should be placed into just one circuit
             (build_circuit_list("2 partial 15 5"), {fake_20qb_backend: 1}),
@@ -25,9 +24,9 @@ class TestParallelizer:
     def test_idle_qubit_removal(self, circuits, expected_rearranged_len):
         should_fail = expected_rearranged_len is None
         try:
-            with warnings.catch_warnings(record=True) as w:
+            with warnings.catch_warnings(record=True) as caught_warnings:
                 rearranged = parallelizer.rearrange(circuits, fake_20qb_backend)
-                assert (len(w) == 1) == should_fail
+                assert (len(caught_warnings) == 1) == should_fail
         except parallelizer.Exceptions.CircuitBackendCompatibility:
             assert should_fail
         else:

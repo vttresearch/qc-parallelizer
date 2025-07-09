@@ -10,7 +10,7 @@ import rustworkx
 import z3
 
 from .base import Exceptions
-from .bins.circuitbin import CircuitBin
+from .circuitbins.bins import CircuitBin
 from .extensions import Circuit
 from .util import IndexedLayout, Log
 

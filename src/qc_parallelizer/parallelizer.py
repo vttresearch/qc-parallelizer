@@ -7,7 +7,7 @@ import qiskit.providers
 
 from . import packers
 from .base import Exceptions, Types
-from .bins.manager import CircuitBinManager
+from .circuitbins.manager import CircuitBinManager
 from .extensions import Backend, Circuit, ensure_sequence, isnestedinstance
 from .results.paralleljob import ParallelJob
 from .util import Log

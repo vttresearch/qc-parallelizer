@@ -1,7 +1,7 @@
 import warnings
 
 import qiskit
-from qc_parallelizer.base import Exceptions, Types
+from qc_parallelizer.base import Exceptions
 from qc_parallelizer.extensions import Backend, Circuit
 
 
