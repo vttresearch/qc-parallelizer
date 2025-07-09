@@ -19,4 +19,4 @@ This folder contains example notebooks for demonstration and documentation purpo
 - **[Packers](./circuit-packers.ipynb)**
 
   A list and documentation of circuit packers. Packers control the physical placement of circuits,
-  considering the backend's topology and positionining relative to other circuits.
+  considering the backend's topology and positioning relative to other circuits.
