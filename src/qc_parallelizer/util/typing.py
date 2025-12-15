@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from types import UnionType
-from typing import Any, TypeVar, cast, get_args, get_origin
+from typing import Any, TypeVar, get_args, get_origin
 
 
 def isnestedinstance(obj: Any, typ: type | UnionType):

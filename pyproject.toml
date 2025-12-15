@@ -1,6 +1,6 @@
 [project]
 name = "qc-parallelizer"
-version = "1.3.2"
+version = "2.0.0"
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
     { name = "Henri Ahola", email = "firstname.lastname@vtt.fi" }

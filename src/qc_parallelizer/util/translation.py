@@ -4,9 +4,9 @@ import qiskit
 import qiskit.providers
 import qiskit.transpiler
 
-from qc_parallelizer.base import Exceptions
-from qc_parallelizer.extensions import Backend, Circuit
-from qc_parallelizer.util import Log
+from ..base import Exceptions
+from ..interfaces import Circuit, Backend
+from . import Log
 
 
 def translate_for_backend(
@@ -22,7 +22,7 @@ def translate_for_backend(
 
     Args:
         pm_kwargs:
-            Passed to PassManagerConfig. Allows configuring translation method, for example.
+            Passed to PassManagerConfig. Allows configuring the translation method, for example.
 
     Returns:
         Translated circuit, or None if the circuit could not be translated.
@@ -91,7 +91,7 @@ class CircuitBackendTranslations:
     @classmethod
     def generate(
         cls,
-        circuits: Sequence[Circuit],
+        circuits: Circuit | Sequence[Circuit],
         backends: Sequence[Backend],
         **kwargs,
     ):
@@ -100,11 +100,14 @@ class CircuitBackendTranslations:
 
         Instead of blindly translating each circuit against each backend, a reduced set of unique
         backend architectures is determined first. This is based on the backends' architecture
-        hashes - see `backendtools.arch_hash()` for details. Circuits are also analyzed for
+        hashes - see the `.arch_hash()` method for details. Circuits are also analyzed for
         duplicates, and each kind of circuit is transpiled only once.
 
         See the `CircuitBackendTranslations` class for more information on the returned object.
         """
+
+        if isinstance(circuits, Circuit):
+            circuits = [circuits]
 
         circuit_hashes = [circuit.hash() for circuit in circuits]
 
@@ -115,8 +118,8 @@ class CircuitBackendTranslations:
 
         Log.debug(
             lambda: (
-                f"Reduced {len(backend_arches.keys())} backend(s) to "
-                f"{len(set(backend_arches.values()))} unique architecture(s)."
+                f"Reduced ${len(backend_arches.keys())} backend$ to "
+                f"${len(set(backend_arches.values()))} unique architecture$."
             ),
         )
 

@@ -1,8 +1,13 @@
 import functools
+import threading
+import typing
+from typing import Callable, Any
 
 import qiskit.providers
-
-from qc_parallelizer.base import Types
+import qiskit.transpiler
+from qiskit.transpiler import Target as QiskitBackendTarget
+from qiskit.providers import JobV1 as QiskitJob
+from qiskit.result import Result as QiskitJobResult
 
 
 class Backend:
@@ -24,20 +29,28 @@ class Backend:
     def cost(self):
         return self._cost
 
-    @functools.cached_property
+    @property
     def name(self):
         return self._backend.name
 
-    @functools.cached_property
+    @property
     def num_qubits(self):
         return self._backend.num_qubits
 
-    @functools.cached_property
+    @property
+    def num_couplers(self):
+        return len(self.edges)
+
+    @property
     def operation_names(self):
         return self._backend.operation_names
 
+    @property
+    def target(self):
+        return typing.cast(QiskitBackendTarget, self._backend.target)
+
     @functools.cached_property
-    def coupling_map(self):
+    def coupling_map(self) -> qiskit.transpiler.CouplingMap:
         return self._backend.coupling_map
 
     @functools.cached_property
@@ -113,5 +126,32 @@ class Backend:
             ),
         )
 
-    def run(self, *args, **kwargs) -> Types.Job:
-        return self._backend.run(*args, **kwargs)  # type: ignore
+    def run(
+        self,
+        *args,
+        callback: Callable[[QiskitJob, QiskitJobResult], Any] | None = None,
+        **kwargs
+    ):
+        """
+        Executes a circuit on this backend. This is a thin wrapper around the real backend's
+        `.run()` method with most args and kwargs left intact.
+
+        Params:
+            callback:
+                An optional callback function that will be called when the job finishes. A new
+                thread is started to wait for job completition. This thread is also responsible for
+                invoking the callback, so please ensure that operations carried out by the callback
+                are thread-safe.
+
+                The callback function receives two arguments: the remote Qiskit job and its result.
+        """
+
+        job = typing.cast(QiskitJob, self._backend.run(*args, **kwargs))
+        if callable(callback):
+            callback_thread = threading.Thread(
+                target=lambda: callback(job, job.result()),
+                name=f"JobCallback<{job.job_id()}>",
+                daemon=True,
+            )
+            callback_thread.start()
+        return job
