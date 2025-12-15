@@ -8,9 +8,10 @@
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
-For an operational overview, see the diagram below.
+~~For an operational overview, see the diagram below.~~
 
-![diagram describing the module's internal operation](./notebooks/parallelizer-full.drawio.png)
+> **Under construction.** The parallelizer has recently undergone major internal restructuring. The
+  old diagram will be updated and added back soon.
 
 ## Why?
 
@@ -56,16 +57,16 @@ backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
 # Parallelize and execute. This call will
 #  1. determine how to combine the circuits and for which backends, and
 #  2. submit jobs to the backends.
-import qc_parallelizer as parallelizer
-job = parallelizer.execute(circuits, backends=backends)
+from qc_parallelier import Parallelizer
+job = Parallelizer().across(backends).run(circuits)
 
 # Fetch and handle results. This plots the first circuit's result histogram, for example.
-results = job.results()
-qiskit.visualization.plot_histogram(result[0].get_counts())
+results = job.result()
+qiskit.visualization.plot_histogram(results.get_counts(0))
 # The job object behaves just like a regular Qiskit Job object, but values are arrays.
 print("Job IDs:")
-for job_id in job.job_id():
-    print(f" - {job_id}")
+for job, id in job.remote_ids.items():
+    print(f"- {id} (on '{job.remote_backend.name}')")
 ```
 
 ## Development setup
@@ -93,6 +94,9 @@ pip install .[notebooks]
 ```
 
 ## Testing
+
+> **Under construction.** The parallelizer has recently undergone major internal restructuring. All
+  tests are currently outdated.
 
 Running all tests is as simple as installing the required dependencies (see above) and running
 
