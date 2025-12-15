@@ -57,7 +57,7 @@ backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
 # Parallelize and execute. This call will
 #  1. determine how to combine the circuits and for which backends, and
 #  2. submit jobs to the backends.
-from qc_parallelier import Parallelizer
+from qc_parallelizer import Parallelizer
 job = Parallelizer().across(backends).run(circuits)
 
 # Fetch and handle results. This plots the first circuit's result histogram, for example.
