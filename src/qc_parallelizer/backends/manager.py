@@ -75,7 +75,7 @@ class BackendManager:
             host_circuit = bin.to_circuit()
 
             Log.info(f"Submitting job to backend |'{bin.backend.name}'|...")
-            Log.debug(f"Circuit:\n{host_circuit.draw(idle_wires=False)}")
+            Log.debug(lambda: f"Circuit:\n{host_circuit.draw(idle_wires=False)}")
 
             remote_job = bin.backend.run(
                 host_circuit,
@@ -101,6 +101,8 @@ class BackendManager:
         counts = typing.cast(dict[str, int], result.get_counts())
 
         sample_key = next(iter(counts.keys()))
+        # Currently, only bitstring keys are supposed. Hexadecimal is also possible to encounter
+        # but TODO.
         if not isinstance(sample_key, str) or not all(char in "01 " for char in sample_key):
             raise ValueError(f"counts with keys of form '{sample_key}' can not be parsed")
 
@@ -141,18 +143,15 @@ class BackendManager:
             start, end = end + 1, end + 1 + num_bits + num_regs - 1
 
             # To avoid having to reverse, slice, and unreverse, we can "pre-reverse" the slice.
-            # `end` points one char beoynd the desired part, so `end - 1` becomes the new start.
-            # Likewise, we want to include everything up to `start`, but since slices are right-open
-            # intervals, the new end is `start - 1`. However, if `start == 0`, this would result in
-            # negative indices, which Python handles as a special case and wraps around. We don't
-            # want special case handling, so we set it to None in that case.
-            clbit_bounds[job] = slice(end - 1, start - 1 if start > 0 else None, -1)
+            # Note the special case handling for `start == 0`, where the end becomes None to index
+            # everything until the last bit. If left as zero, this would produce empty slices since
+            # `slice(-end, 0) == slice(0)` for `end >= 0`.
+            clbit_bounds[job] = slice(-end, -start if start > 0 else None)
 
         split_counts = {job: collections.Counter() for job in bin}
         for bitstring, count in counts.items():
-            bitstring_rev = bitstring[::-1]
             for job, bounds in clbit_bounds.items():
-                split_counts[job][bitstring_rev[bounds]] += count
+                split_counts[job][bitstring[bounds]] += count
 
         for job in bin:
             job.mark_completed(dict(split_counts[job]))

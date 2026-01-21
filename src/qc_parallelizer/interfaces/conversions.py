@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from qc_parallelizer.parallelizer import ParallelizedBackend
     from qc_parallelizer.jobs.job import ParallelizerJobBatch
 
+# TODO: should the assert_never calls below be raise TypeError instead?
+
 def convert_to_backend_list(backends: InputTypes.Backends) -> list[Backend]:
     """
     Converts a backend or list of backends into a list of internal Backend objects.
@@ -75,6 +77,9 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
         self.par_job = job_batch
 
     def submit(self):
+        # Parallelized jobs are automatically submitted when appropriate, so this method does
+        # nothing. If this triggered a forced/asap execution, in the worst case, no parallelization
+        # would take place as all jobs would run immediately.
         pass
 
     def result(self):
@@ -96,13 +101,15 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
         )
 
     def cancel(self):
-        # TODO?
+        # TODO? Cancelling jobs that have not been submitted yet is easy, otherwise not sure.
         raise NotImplementedError
 
     def status(self):
         if self.par_job.is_ready:
             return QiskitJobStatus.DONE
-        return QiskitJobStatus.RUNNING
+        if any(job.is_submitted for job in self.par_job.jobs):
+            return QiskitJobStatus.RUNNING
+        return QiskitJobStatus.QUEUED
 
 class ParallelizedQiskitBackendAdapter(QiskitBackend):
     """
@@ -125,7 +132,7 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
 
     @classmethod
     def _default_options(cls): # type: ignore
-        return QiskitBackendOptions()
+        return QiskitBackendOptions() # empty, but required for compatibility
 
     @property
     def target(self): # type: ignore
@@ -155,9 +162,10 @@ def build_merged_target(backends: Sequence[Backend]):
             backend.target.instructions
         ):
             # The Instruction class is not hashable, so we use its repr instead.
-            if repr(instruction) not in instructions:
-                instructions[repr(instruction)] = (instruction, {})
-            _, props = instructions[repr(instruction)]
+            key = repr(instruction)
+            if key not in instructions:
+                instructions[key] = (instruction, {})
+            _, props = instructions[key]
             shifted_qargs = tuple(q + qubit_cumulative_offset for q in qargs)
             props[shifted_qargs] = backend.target[instruction.name][qargs]
         qubit_cumulative_offset += backend.num_qubits
