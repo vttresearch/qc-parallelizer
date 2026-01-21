@@ -22,12 +22,14 @@ class PackerBase:
     min_intra_distance: int
     min_inter_distance: int
     max_candidates: int | None
+    new_bin_penalty: float
 
     def __init__(
         self,
         min_intra_distance: int = 0,
         min_inter_distance: int = 0,
         max_candidates: int | None = 1,
+        new_bin_penalty: float = 1.0,
     ):
         """
         Args:
@@ -44,6 +46,12 @@ class PackerBase:
             max_candidates:
                 Controls how many backend bin candidates are considered before picking the best
                 option. Only one, the heuristically best candidate, is considered by default.
+            new_bin_penalty:
+                A multiplicative penalty applied to circuit placements that use new, fresh bins.
+                When multiple candidate placements are considered (so, when `max_candidates > 1`),
+                each candidate is evaluated and the resulting rating is multiplied with this factor.
+                The intended interval is [0, 1], where 0.0 would zero the rating of such placements,
+                and 1.0 would leave it unmodified.
         """
         if min_intra_distance not in [0, 1]:
             raise Exceptions.ParameterError(
@@ -60,6 +68,7 @@ class PackerBase:
         self.min_intra_distance = min_intra_distance
         self.min_inter_distance = min_inter_distance
         self.max_candidates = max_candidates
+        self.new_bin_penalty = new_bin_penalty
 
     def blocked(
         self,

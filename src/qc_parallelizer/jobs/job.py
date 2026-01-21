@@ -85,7 +85,7 @@ class ParallelizerJob:
             for backend in optimal_backends
         }
 
-        candidate_placements: list[tuple[Any, "BackendCircuitBin", Circuit]] = []
+        candidate_placements: list[tuple[Any, int, "BackendCircuitBin", Circuit]] = []
         max_candidates = self.backend.packer.max_candidates or float("inf")
 
         for candidate_bin in self.backend.manager.best_bins(translations):
@@ -105,13 +105,34 @@ class ParallelizerJob:
                 completed_circuit = translated.with_layout(completed_layout)
                 rating = self.backend.packer.evaluate(candidate_bin, completed_circuit)
                 Log.debug(f"Received rating |{rating}| for placement candidate.")
-                heapq.heappush(candidate_placements, (-rating, candidate_bin, completed_circuit))
+                if candidate_bin.is_empty:
+                    Log.debug((
+                        "Candidate bin is empty, applying "
+                        f"|{self.backend.packer.new_bin_penalty}| penalty to rating."
+                    ))
+                    rating *= self.backend.packer.new_bin_penalty
+                    Log.debug(f"Rating is now |{rating}|.")
+                heapq.heappush(
+                    candidate_placements,
+                    # The second element (length) is used to sort ties and avoid comparing bin
+                    # objects, which would be an error.
+                    (-rating, len(candidate_placements), candidate_bin, completed_circuit),
+                )
                 if len(candidate_placements) >= max_candidates:
+                    Log.debug(f"Maximum candidate limit |{max_candidates}| reached.")
                     break
+        else:
+            Log.debug("All bin candidates exhausted.")
+
+        Log.debug("Candidates:")
+        for rating, _, bin, _ in candidate_placements:
+            Log.debug(f" - Rating |{-rating}| in bin with ${bin.size} circuit$.")
 
         if len(candidate_placements) > 0:
-            Log.debug("![FOUND LAYOUT] Bin and layout found for circuit.")
-            _, bin, circuit = candidate_placements[0]
+            rating, _, bin, circuit = candidate_placements[0]
+            Log.debug(
+                f"![FOUND LAYOUT] Bin and layout with rating |{-rating}| found for circuit."
+            )
             return bin, circuit
 
         Log.fail("No suitable bins found for circuit!")
