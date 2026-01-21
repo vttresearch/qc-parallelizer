@@ -237,9 +237,39 @@ class ParallelizerJobBatch:
             for job in self.jobs
         }
 
-    def draw(self, figsize=None):
+    def draw(
+        self,
+        circuit_colors: list[str] = [
+            "#dd0000",
+            "#008800",
+            "#0000bb",
+            "#0099aa",
+            "#aa00aa",
+            "#aa9900"
+        ],
+        active_coupler_color: str = "black",
+        idle_qubit_color: str = "grey",
+        idle_coupler_color: str = "grey",
+        qubit_size: int = 80,
+        coupler_width: int = 25,
+        font_size: int = 24,
+        dpi: int = 100,
+        figsize=None,
+    ):
         """
         Plots this job's chosen layout(s) on the backend(s). Requires Matplotlib to be installed.
+        Required dependencies can be installed with `pip install qc_parallelizer[visualization]`.
+
+        Args:
+            circuit_colors:
+                A list of color strings that will be cycled through to color different circuits in
+                each bin.
+            active_coupler_color:
+                A color string for coloring active couplers.
+            idle_qubit_color:
+                A color string for coloring idle qubits (from this job's perspective).
+            idle_coupler_color:
+                A color string for coloring idle couplers (from this job's perspective).
 
         Returns:
             A Matplotlib Figure. If used in a notebook, this function takes care of closing unwanted
@@ -256,6 +286,7 @@ class ParallelizerJobBatch:
             bin
             for job in self.jobs
             for bin in job.backend.manager.bins
+            if job in bin
         }
         job_bins = {
             bin: [job for job in self.jobs if job in bin]
@@ -265,7 +296,7 @@ class ParallelizerJobBatch:
 
         fig, axs = matplotlib.pyplot.subplots(
             ncols=len(job_bins),
-            dpi=100,
+            dpi=dpi,
             figsize=figsize,
             squeeze=False,
         )
@@ -275,11 +306,16 @@ class ParallelizerJobBatch:
             for i, qubits in enumerate(qubit_indices):
                 for q in qubits:
                     indices[q] = i
-            color_table = ["#dd0000", "#008800", "#0000bb", "#0099aa", "#aa00aa", "#aa9900"]
-            return [color_table[i % 6] if i is not None else "grey" for i in indices]
+            return [
+                circuit_colors[i % len(circuit_colors)] if i is not None else idle_qubit_color
+                for i in indices
+            ]
 
         def get_coupler_colors(circuit_couplers, backend_couplers):
-            return ["black" if (a, b) in circuit_couplers else "grey" for a, b in backend_couplers]
+            return [
+                active_coupler_color if (a, b) in circuit_couplers else idle_coupler_color
+                for a, b in backend_couplers
+            ]
 
         for i, (bin, jobs) in enumerate(job_bins.items()):
             qubit_indices = [job.layout.pindices for job in jobs]
@@ -299,9 +335,9 @@ class ParallelizerJobBatch:
                 coupling_map=bin.backend.edges,
                 ax=axs[0, i],
                 planar=False,
-                qubit_size=80,
-                font_size=24,
-                line_width=25,
+                qubit_size=qubit_size,
+                font_size=font_size,
+                line_width=coupler_width,
                 qubit_color=qubit_colors,
                 line_color=coupler_colors,
             )

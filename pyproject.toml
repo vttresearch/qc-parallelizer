@@ -17,6 +17,7 @@ Notebooks = "https://github.com/vttresearch/qc-parallelizer/tree/main/notebooks"
 [project.optional-dependencies]
 tests = [ "iqm-client[qiskit]", "pytest", "pytest-cov" ]
 notebooks = [ "iqm-client[qiskit]", "ipykernel", "matplotlib", "pylatexenc" ]
+visualization = [ "matplotlib", "pylatexenc" ]
 
 [build-system]
 requires = [ "setuptools>=68.0.0", "setuptools_scm[toml]>=7" ]
