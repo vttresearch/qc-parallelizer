@@ -20,3 +20,10 @@ This folder contains example notebooks for demonstration and documentation purpo
 
   A list and documentation of circuit packers. Packers control the physical placement of circuits,
   considering the backend's topology and positioning relative to other circuits.
+
+## Other examples
+
+- **[Ring packing](./ring-packing.ipynb)**
+
+  A minimally documented example of using the parallelizer to pack circuits with cyclical topology
+  onto the VTT Q50.

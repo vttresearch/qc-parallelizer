@@ -4,14 +4,13 @@
 [![PyPI version](https://badge.fury.io/py/qc-parallelizer.svg)](https://pypi.org/project/qc-parallelizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 
-
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
 ~~For an operational overview, see the diagram below.~~
 
 > **Under construction.** The parallelizer has recently undergone major internal restructuring. The
-  old diagram will be updated and added back soon.
+  [old diagram](./notebooks/parallelizer-full.drawio.png) will be updated and added back soon.
 
 ## Why?
 

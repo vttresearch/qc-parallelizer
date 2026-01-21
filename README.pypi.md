@@ -5,10 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 
 A Python module for optimally combining and distributing quantum circuits. Please find the source
-code, examples, and documentation, [on GitHub](https://github.com/vttresearch/qc-parallelizer). The
-diagram below illustrates the module's operation on a high level.
+code, examples, and documentation, [on GitHub](https://github.com/vttresearch/qc-parallelizer).
+~~The diagram below illustrates the module's operation on a high level.~~
 
-![](https://raw.githubusercontent.com/vttresearch/qc-parallelizer/refs/heads/main/notebooks/parallelizer-full.drawio.png)
+> **Under construction.** The parallelizer has recently undergone major internal restructuring. The
+  [old diagram][old-diagram] will be updated and added back soon.
+
+[old-diagram]: https://raw.githubusercontent.com/vttresearch/qc-parallelizer/refs/heads/main/notebooks/parallelizer-full.drawio.png
 
 ## Authors
 
