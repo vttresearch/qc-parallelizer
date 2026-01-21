@@ -3,7 +3,7 @@ from . import vf2, smt
 
 class Defaults:
     Optimizing = vf2.Minimizing
-    Fast = smt.NonOptimizing
+    Fast = vf2.NonOptimizing
 
 __all__ = (
     "Defaults",

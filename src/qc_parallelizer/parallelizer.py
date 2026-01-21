@@ -27,9 +27,10 @@ class ParallelizedBackend:
     a real backend with the `.as_qiskit_backend` property.
     """
 
-    def __init__(self, parent: "Parallelizer", backends: Sequence[Backend]):
+    def __init__(self, parent: "Parallelizer", backends: Sequence[Backend], auto_exec: bool):
         self.parent = parent
         self.remote_backends = backends
+        self.auto_exec = auto_exec
 
     def run(self, circuit_inputs: InputTypes.Circuits):
         circuits = convert_to_circuit_list(circuit_inputs)
@@ -37,7 +38,7 @@ class ParallelizedBackend:
             ParallelizerJob(self, circuit) for circuit in circuits
         ])
         batch.place_all()
-        self.manager.tick()
+        self.manager.tick(self.auto_exec)
         return batch
 
     @property
@@ -107,6 +108,7 @@ class Parallelizer:
     def across(
         self,
         backend_inputs: InputTypes.Backends,
+        auto_exec: bool = True,
     ):
         """
         Creates a parallelization instance across a set of backends. The resulting object works like
@@ -120,8 +122,12 @@ class Parallelizer:
                 Cost is considered when there are several suitable candidates for executing a
                 circuit, with lower cost being more favourable. If not provided, a default cost of
                 1 is used.
+
+            auto_exec:
+                By default, when a backend gets completely occupied, the combined circuit is
+                submitted automatically. Passing False here disables this behaviour.
         """
 
         backends = convert_to_backend_list(backend_inputs)
         self.manager.register(backends)
-        return ParallelizedBackend(self, backends)
+        return ParallelizedBackend(self, backends, auto_exec)

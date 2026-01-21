@@ -21,14 +21,12 @@ class PackerBase:
 
     min_intra_distance: int
     min_inter_distance: int
-    max_bins_per_backend: int | None
     max_candidates: int | None
 
     def __init__(
         self,
         min_intra_distance: int = 0,
         min_inter_distance: int = 0,
-        max_bins_per_backend: int | None = None,
         max_candidates: int | None = 1,
     ):
         """
@@ -43,9 +41,6 @@ class PackerBase:
                 circuits**. Setting this to 0 achieves the densest packing, but may introduce
                 unwanted crosstalk. Setting this to 1 forces "padding" qubits to be left between
                 circuits. Greater values are also accepted, but possibly with diminishing returns.
-            max_bins_per_backend:
-                Controls how many bins (= host circuits) can be created per backend. This is
-                proportional to the total execution duration. Set to None for no limit.
             max_candidates:
                 Controls how many backend bin candidates are considered before picking the best
                 option. Only one, the heuristically best candidate, is considered by default.
@@ -64,7 +59,6 @@ class PackerBase:
             )
         self.min_intra_distance = min_intra_distance
         self.min_inter_distance = min_inter_distance
-        self.max_bins_per_backend = max_bins_per_backend
         self.max_candidates = max_candidates
 
     def blocked(
