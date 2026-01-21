@@ -288,7 +288,7 @@ class ParallelizerJobBatch:
                 for job in jobs
                 for edge in (
                     (job.layout.v2p[a], job.layout.v2p[b])
-                    for a, b in job.circuit.get_edges()
+                    for a, b in job.circuit.get_edges(bidir=True)
                 )
             ]
             qubit_colors = get_qubit_colors(qubit_indices, bin.backend.num_qubits)
