@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING
 from qiskit import QuantumCircuit as QiskitCircuit
 from qiskit.circuit import ClassicalRegister
 
-from ..interfaces import Circuit, Backend
+from ..interfaces import Backend, Circuit
 
 if TYPE_CHECKING:
     from ..jobs.job import ParallelizerJob
+
 
 class BackendCircuitBin:
     """
@@ -67,10 +68,7 @@ class BackendCircuitBin:
         The number of currently free couplers. A coupler is free if both end qubits are free.
         """
         free = self.free_indices
-        return sum(
-            1 for a, b in self.backend.edges
-            if a in free and b in free
-        )
+        return sum(1 for a, b in self.backend.edges if a in free and b in free)
 
     @property
     def num_taken_couplers(self):
@@ -79,16 +77,11 @@ class BackendCircuitBin:
         qubits are taken.
         """
         taken = self.taken_indices
-        return sum(
-            1 for a, b in self.backend.edges
-            if a in taken or b in taken
-        )
+        return sum(1 for a, b in self.backend.edges if a in taken or b in taken)
 
     @property
     def _layouts(self):
-        return (
-            job.circuit.layout for job in self.jobs
-        )
+        return (job.circuit.layout for job in self.jobs)
 
     @property
     def free_indices(self):
@@ -166,8 +159,7 @@ class BackendCircuitBin:
                 self.cregs[job].append(new_reg)
 
             qreg_indices = {
-                virt_qubit: job.circuit.index_of(virt_qubit)
-                for virt_qubit in job.circuit.qubits
+                virt_qubit: job.circuit.index_of(virt_qubit) for virt_qubit in job.circuit.qubits
             }
 
             qreg_mapping = {

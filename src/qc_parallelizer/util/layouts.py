@@ -209,7 +209,7 @@ class IndexedLayout:
         if decrement_keys:
             new_v2p = {}
             for other_virt in list(self._v2p.keys()):
-                if other_virt > virt:  # type: ignore # virt is known to be non-None at this point
+                if other_virt > virt: # type: ignore # virt is known to be non-None at this point
                     phys = self._v2p[other_virt]
                     del self._v2p[other_virt]
                     new_virt = other_virt - 1

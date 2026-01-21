@@ -1,8 +1,8 @@
 import warnings
 from typing import Any
 
-from ..base import Exceptions
 from ..backends import BackendCircuitBin
+from ..base import Exceptions
 from ..interfaces import Circuit
 from ..util import IndexedLayout
 

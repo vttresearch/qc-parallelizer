@@ -1,34 +1,47 @@
-from typing_extensions import assert_never
 import typing
-from typing import Sequence, TYPE_CHECKING
+from collections.abc import Sequence
 from numbers import Real
+from typing import TYPE_CHECKING
 
-from qiskit.result import Result as QiskitResult
+from qiskit.circuit import Instruction as QiskitInstruction
+from qiskit.circuit import QuantumCircuit as QiskitCircuit
 from qiskit.providers import (
     BackendV2 as QiskitBackend,
-    JobV1 as QiskitJob,
+)
+from qiskit.providers import (
     JobStatus as QiskitJobStatus,
+)
+from qiskit.providers import (
+    JobV1 as QiskitJob,
+)
+from qiskit.providers import (
     Options as QiskitBackendOptions,
 )
+from qiskit.result import Result as QiskitResult
 from qiskit.result.models import (
     ExperimentResult as QiskitExperimentResult,
+)
+from qiskit.result.models import (
     ExperimentResultData as QiskitExperimentResultData,
 )
-from qiskit.circuit import Instruction as QiskitInstruction, QuantumCircuit as QiskitCircuit
 from qiskit.transpiler import (
     InstructionProperties as QiskitInstructionProperties,
+)
+from qiskit.transpiler import (
     Target as QiskitBackendTarget,
 )
+from typing_extensions import assert_never
 
-from ..base import Types, InputTypes
-from . import Circuit, Backend
+from ..base import InputTypes, Types
 from ..util.typing import ensure_sequence, isnestedinstance
+from . import Backend, Circuit
 
 if TYPE_CHECKING:
-    from qc_parallelizer.parallelizer import ParallelizedBackend
     from qc_parallelizer.jobs.job import ParallelizerJobBatch
+    from qc_parallelizer.parallelizer import ParallelizedBackend
 
 # TODO: should the assert_never calls below be raise TypeError instead?
+
 
 def convert_to_backend_list(backends: InputTypes.Backends) -> list[Backend]:
     """
@@ -48,6 +61,7 @@ def convert_to_backend_list(backends: InputTypes.Backends) -> list[Backend]:
 
     return [normalize_backend(backend) for backend in backends]
 
+
 def convert_to_circuit_list(circuits: InputTypes.Circuits) -> list[Circuit]:
     """
     Converts a circuit or list of circuit into a list of internal Circuit objects.
@@ -65,6 +79,7 @@ def convert_to_circuit_list(circuits: InputTypes.Circuits) -> list[Circuit]:
         assert_never(circuit)
 
     return [normalize_circuit(circuit) for circuit in circuits]
+
 
 class ParallelizedQiskitJobAdapter(QiskitJob):
     def __init__(
@@ -111,6 +126,7 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
             return QiskitJobStatus.RUNNING
         return QiskitJobStatus.QUEUED
 
+
 class ParallelizedQiskitBackendAdapter(QiskitBackend):
     """
     An adapter/wrapper for parallelization instances that pretend to be real Qiskit backends.
@@ -138,6 +154,7 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
     def target(self): # type: ignore
         return build_merged_target(self.backend.remote_backends)
 
+
 def build_merged_target(backends: Sequence[Backend]):
     """
     Builds a merged targed from several backends. The merged target is a union of all provided
@@ -147,10 +164,10 @@ def build_merged_target(backends: Sequence[Backend]):
     Instructions and their properties are preserved. Only qubit indices ("qargs") are modified.
     """
 
-    instructions: dict[str, tuple[
-        QiskitInstruction,
-        dict[tuple[int, ...], QiskitInstructionProperties]
-    ]] = {}
+    instructions: dict[
+        str,
+        tuple[QiskitInstruction, dict[tuple[int, ...], QiskitInstructionProperties]],
+    ] = {}
 
     qubit_cumulative_offset = 0
     for backend in backends:
@@ -159,7 +176,7 @@ def build_merged_target(backends: Sequence[Backend]):
         assert backend.target is not None
         for instruction, qargs in typing.cast(
             Sequence[tuple[QiskitInstruction, tuple[int, ...]]],
-            backend.target.instructions
+            backend.target.instructions,
         ):
             # The Instruction class is not hashable, so we use its repr instead.
             key = repr(instruction)

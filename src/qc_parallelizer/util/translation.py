@@ -5,7 +5,7 @@ import qiskit.providers
 import qiskit.transpiler
 
 from ..base import Exceptions
-from ..interfaces import Circuit, Backend
+from ..interfaces import Backend, Circuit
 from . import Log
 
 

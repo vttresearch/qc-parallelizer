@@ -11,8 +11,8 @@ import rustworkx
 from ..backends import BackendCircuitBin
 from ..interfaces import Circuit
 from ..util import IndexedLayout, Log
-
 from .base import PackerBase
+
 
 class VF2Base(PackerBase):
     id_order: bool
@@ -71,6 +71,7 @@ class VF2Base(PackerBase):
 
         return (dict(mapping) for mapping in mapping_generator)
 
+
 class NonOptimizing(VF2Base):
     """
     Finds any valid layout. Very efficient, but results in possibly non-optimal packings.
@@ -87,6 +88,7 @@ class NonOptimizing(VF2Base):
         except StopIteration:
             Log.warn("No layout found.")
             return None
+
 
 class Minimizing(VF2Base):
     """
@@ -140,6 +142,7 @@ class Minimizing(VF2Base):
             *_, best = solution_heap[0]
             return best
         return None
+
 
 __all__ = (
     "NonOptimizing",

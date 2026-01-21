@@ -1,14 +1,15 @@
-import typing
 import collections
-from typing import Sequence
+import typing
+from collections.abc import Sequence
 
 from qiskit.providers import JobV1 as QiskitJob
 from qiskit.result import Result as QiskitJobResult
 
-from ..util import Log
-from ..interfaces import Circuit, Backend
+from ..interfaces import Backend, Circuit
 from ..jobs import ParallelizerJob
+from ..util import Log
 from . import BackendCircuitBin
+
 
 class ManagedBackend:
     def __init__(self, backend: Backend):
@@ -20,6 +21,7 @@ class ManagedBackend:
     def num_nonempty_bins(self):
         return sum(1 for bin in self.bins if bin.size > 0)
 
+
 class BackendManager:
     def __init__(self):
         self.remote_backends: dict[Backend, ManagedBackend] = {}
@@ -29,9 +31,7 @@ class BackendManager:
         new = as_set - set(self.remote_backends)
         Log.debug(f"Processing ${len(new)} new backend$.")
         for backend in new:
-            Log.debug(
-                f"Registered backend |'{backend.name}'| with ${backend.num_qubits} qubit$."
-            )
+            Log.debug(f"Registered backend |'{backend.name}'| with ${backend.num_qubits} qubit$.")
             self.remote_backends[backend] = ManagedBackend(backend)
 
     def _ensure_empty_available(self):
@@ -45,27 +45,29 @@ class BackendManager:
     @property
     def bins(self):
         self._ensure_empty_available()
-        return [
-            bin
-            for backend in self.remote_backends.values()
-            for bin in backend.bins
-        ]
+        return [bin for backend in self.remote_backends.values() for bin in backend.bins]
 
     def best_bins(self, backend_translations: dict[Backend, Circuit]):
         compatible = [
-            bin for bin in self.bins
+            bin
+            for bin in self.bins
             if bin.backend in backend_translations
             if bin.compatible(backend_translations[bin.backend])
         ]
-        return sorted(compatible, key=lambda bin: (
-            bin.size == 0, # this forces empty bins to be considered last
-            (self[bin.backend].num_runs + self[bin.backend].num_nonempty_bins) * bin.backend.cost,
-            bin.frac_taken,
-        ))
+        return sorted(
+            compatible,
+            key=lambda bin: (
+                bin.size == 0, # this forces empty bins to be considered last
+                (self[bin.backend].num_runs + self[bin.backend].num_nonempty_bins)
+                * bin.backend.cost,
+                bin.frac_taken,
+            ),
+        )
 
     def tick(self, auto_exec: bool = True):
         ready_bins = (
-            bin for bin in self.bins
+            bin
+            for bin in self.bins
             if bin.size > 0
             if any(job.completion_requested for job in bin) or (bin.is_full and auto_exec)
         )

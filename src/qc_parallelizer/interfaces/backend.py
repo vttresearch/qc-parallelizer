@@ -1,13 +1,14 @@
 import functools
 import threading
 import typing
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
 import qiskit.providers
 import qiskit.transpiler
-from qiskit.transpiler import Target as QiskitBackendTarget
 from qiskit.providers import JobV1 as QiskitJob
 from qiskit.result import Result as QiskitJobResult
+from qiskit.transpiler import Target as QiskitBackendTarget
 
 
 class Backend:
@@ -130,7 +131,7 @@ class Backend:
         self,
         *args,
         callback: Callable[[QiskitJob, QiskitJobResult], Any] | None = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Executes a circuit on this backend. This is a thin wrapper around the real backend's

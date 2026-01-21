@@ -34,10 +34,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = [ "F", "E", "W", "I001", "I002" ]
-ignore = [ "E101", "W191", "F401", "F811", "E712" ]
+ignore = [ "E101", "W191", "F401", "F811", "E712", "E261" ]
 # F401: ignore unused imports, breaks Pytest fixtures
 # F811: ignore redefinitions, also breaks Pytest fixtures
 # E712: ignore comparisons with False
+# E261: ignore inline comments less than two spaces after the end of the line
 
 [tool.ruff.format]
 indent-style = "space"

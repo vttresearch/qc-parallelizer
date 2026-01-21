@@ -1,21 +1,23 @@
-import uuid
-import heapq
 import functools
-import threading
+import heapq
 import operator
-from typing import Sequence, Any, TYPE_CHECKING
+import threading
+import uuid
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
-from qiskit.providers import JobV1 as QiskitJob
 from qiskit.circuit import QuantumCircuit as QiskitCircuit
+from qiskit.providers import JobV1 as QiskitJob
 
-from ..util import Log
 from ..base import Exceptions
+from ..interfaces import Backend, Circuit
+from ..util import Log
 from ..util.translation import CircuitBackendTranslations
-from ..interfaces import Circuit, Backend
 
 if TYPE_CHECKING:
-    from ..parallelizer import ParallelizedBackend
     from ..backends import BackendCircuitBin
+    from ..parallelizer import ParallelizedBackend
+
 
 class JobResult:
     def __init__(self, counts: dict[str, int] | None):
@@ -31,6 +33,7 @@ class JobResult:
 
     def __repr__(self):
         return f"{self.__class__.__name__}({repr(self.counts)})"
+
 
 class BatchedJobResult:
     def __init__(self, results: Sequence[JobResult]):
@@ -49,6 +52,7 @@ class BatchedJobResult:
 
     def __repr__(self):
         return repr(self.results)
+
 
 class ParallelizerJob:
     """
@@ -76,23 +80,24 @@ class ParallelizerJob:
     def _find_bin_layout(self):
         Log.debug(
             f"![FINDING LAYOUT] Determining layout for |{self.circuit.num_qubits}-qubit| "
-            "circuit."
+            "circuit.",
         )
 
         optimal_backends = self.translations.optimal_backends_for(self.circuit)
         translations = {
-            backend: self.translations.get(self.circuit, backend)
-            for backend in optimal_backends
+            backend: self.translations.get(self.circuit, backend) for backend in optimal_backends
         }
 
         candidate_placements: list[tuple[Any, "BackendCircuitBin", Circuit]] = []
         max_candidates = self.backend.packer.max_candidates or float("inf")
 
         for candidate_bin in self.backend.manager.best_bins(translations):
-            Log.debug((
-                f"Trying bin on backend |'{candidate_bin.backend.name}'| with "
-                f"${candidate_bin.size} circuit$."
-            ))
+            Log.debug(
+                (
+                    f"Trying bin on backend |'{candidate_bin.backend.name}'| with "
+                    f"${candidate_bin.size} circuit$."
+                ),
+            )
 
             blocked = self.backend.packer.blocked(candidate_bin)
             translated = translations[candidate_bin.backend]
@@ -126,9 +131,7 @@ class ParallelizerJob:
 
         if len(candidate_placements) > 0:
             key, bin, circuit = candidate_placements[0]
-            Log.debug(
-                f"![FOUND LAYOUT] Bin and layout with key |{key}| found for circuit."
-            )
+            Log.debug(f"![FOUND LAYOUT] Bin and layout with key |{key}| found for circuit.")
             return bin, circuit
 
         Log.fail("No suitable bins found for circuit!")
@@ -137,10 +140,12 @@ class ParallelizerJob:
     def place(self):
         bin, self.circuit = self._find_bin_layout()
         bin.place(self)
-        Log.debug((
-            f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
-            f"|'{bin.backend.name}'|."
-        ))
+        Log.debug(
+            (
+                f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
+                f"|'{bin.backend.name}'|."
+            ),
+        )
 
     @property
     def is_submitted(self):
@@ -178,7 +183,7 @@ class ParallelizerJob:
         if not self.is_ready:
             self.request_completion()
             if block:
-                Log.debug(f"Blocking until job completion.")
+                Log.debug("Blocking until job completion.")
                 self.completed.wait()
         if not self.is_ready:
             return JobResult.empty()
@@ -196,6 +201,7 @@ class ParallelizerJob:
     def __hash__(self):
         return hash(self.id)
 
+
 class ParallelizerJobBatch:
     """
     A batch of parallelized circuit executions. Not necessarily executed together - the contained
@@ -206,17 +212,26 @@ class ParallelizerJobBatch:
         self.jobs = list(jobs)
 
     def place_all(self, sort: bool = True):
-        jobs = sorted(self.jobs, key=lambda job: (
-            -job.circuit.layout.size,
-            job.circuit.num_connected_components / job.circuit.num_qubits,
-            -job.circuit.num_qubits,
-        )) if sort else self.jobs
+        jobs = (
+            sorted(
+                self.jobs,
+                key=lambda job: (
+                    -job.circuit.layout.size,
+                    job.circuit.num_connected_components / job.circuit.num_qubits,
+                    -job.circuit.num_qubits,
+                ),
+            )
+            if sort
+            else self.jobs
+        )
 
         for job in jobs:
-            Log.debug((
-                f"Placing circuit with ${job.circuit.num_qubits} qubit$ and layout of size "
-                f"|{job.circuit.layout.size}|."
-            ))
+            Log.debug(
+                (
+                    f"Placing circuit with ${job.circuit.num_qubits} qubit$ and layout of size "
+                    f"|{job.circuit.layout.size}|."
+                ),
+            )
             job.place()
 
     def result(self, block: bool = True):
@@ -262,7 +277,7 @@ class ParallelizerJobBatch:
             "#0000bb",
             "#0099aa",
             "#aa00aa",
-            "#aa9900"
+            "#aa9900",
         ],
         active_coupler_color: str = "black",
         idle_qubit_color: str = "grey",
@@ -299,12 +314,7 @@ class ParallelizerJobBatch:
         except ImportError as exc:
             raise RuntimeError("missing optional dependencies") from exc
 
-        relevant_bins = {
-            bin
-            for job in self.jobs
-            for bin in job.backend.manager.bins
-            if job in bin
-        }
+        relevant_bins = {bin for job in self.jobs for bin in job.backend.manager.bins if job in bin}
         job_bins = {
             bin: [job for job in self.jobs if job in bin]
             for bin in relevant_bins
@@ -370,10 +380,7 @@ class ParallelizerJobBatch:
             index = Circuit(index)
         if isinstance(index, Circuit):
             try:
-                return next(
-                    job for job in self.jobs
-                    if job.original_circuit.hash() == index.hash()
-                )
+                return next(job for job in self.jobs if job.original_circuit.hash() == index.hash())
             except StopIteration as exc:
                 raise LookupError("the given circuit was not found in this job batch") from exc
         raise TypeError(f"'{index}' is not a valid index into a job batch")

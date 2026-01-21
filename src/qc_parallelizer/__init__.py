@@ -1,5 +1,3 @@
 from .parallelizer import Parallelizer
 
-__all__ = (
-    "Parallelizer",
-)
+__all__ = ("Parallelizer",)

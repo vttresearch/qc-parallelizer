@@ -1,15 +1,16 @@
-from typing import Sequence
+from collections.abc import Sequence
 
+from . import packers
 from .backends import BackendManager
 from .base import InputTypes
-from .interfaces import Backend
 from .interfaces import (
-    convert_to_circuit_list,
-    convert_to_backend_list,
+    Backend,
     ParallelizedQiskitBackendAdapter,
+    convert_to_backend_list,
+    convert_to_circuit_list,
 )
 from .jobs import ParallelizerJob, ParallelizerJobBatch
-from . import packers
+
 
 class ParallelizedBackend:
     """
@@ -34,9 +35,7 @@ class ParallelizedBackend:
 
     def run(self, circuit_inputs: InputTypes.Circuits):
         circuits = convert_to_circuit_list(circuit_inputs)
-        batch = ParallelizerJobBatch([
-            ParallelizerJob(self, circuit) for circuit in circuits
-        ])
+        batch = ParallelizerJobBatch([ParallelizerJob(self, circuit) for circuit in circuits])
         batch.place_all()
         self.manager.tick(self.auto_exec)
         return batch
@@ -55,10 +54,7 @@ class ParallelizedBackend:
         A dictionary of backend utilization, measured as the number of circuits submitted.
         """
 
-        return {
-            backend: self.manager[backend].num_runs
-            for backend in self.remote_backends
-        }
+        return {backend: self.manager[backend].num_runs for backend in self.remote_backends}
 
     @property
     def packer(self):
@@ -81,6 +77,7 @@ class ParallelizedBackend:
 
     def __exit__(self, exc_type, exc_value, traceback):
         pass
+
 
 class Parallelizer:
     def __init__(

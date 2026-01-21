@@ -26,7 +26,7 @@ from utils import build_circuit_list, fake_54qb_backend_cluster
 # Enable/disable ANSI colors depending on output type (or user preference)
 if os.isatty(0) and "--no-color" not in sys.argv:
 
-    class Color:  # type: ignore
+    class Color: # type: ignore
         enabled = True
         Reset = "\033[0m"
         Grey = "\033[38;5;245m"

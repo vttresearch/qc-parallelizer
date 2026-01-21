@@ -22,9 +22,9 @@ def plot_circuits(
     # Force conversion to 2D array if 1D array was passed
     circuit_table: list[list[qiskit.QuantumCircuit]]
     if isinstance(circuits[0], qiskit.QuantumCircuit):
-        circuit_table = [circuits]  # type: ignore
+        circuit_table = [circuits] # type: ignore
     else:
-        circuit_table = circuits  # type: ignore
+        circuit_table = circuits # type: ignore
 
     nrows, ncols = len(circuit_table), max(len(row) for row in circuit_table)
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, dpi=300, figsize=figsize)

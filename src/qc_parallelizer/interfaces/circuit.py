@@ -1,11 +1,13 @@
 import json
-import warnings
 import typing
-from typing import Any, Iterable, Sequence
+import warnings
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 import qiskit
 import qiskit.circuit
-from qiskit.circuit import Instruction as QiskitInstruction, Qubit, Clbit
+from qiskit.circuit import Clbit, Qubit
+from qiskit.circuit import Instruction as QiskitInstruction
 
 from ..base import Exceptions
 from ..util import IndexedLayout
@@ -292,7 +294,8 @@ class Circuit:
                 tuple(operation.params),
                 tuple([self.index_of(q) for q in qubits]),
                 tuple([self.index_of(c) for c in clbits]),
-            ) for operation, qubits, clbits in typing.cast(
+            )
+            for operation, qubits, clbits in typing.cast(
                 Iterable[tuple[QiskitInstruction, Sequence[Qubit], Sequence[Clbit]]],
                 self._circuit.data,
             )

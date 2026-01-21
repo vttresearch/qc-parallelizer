@@ -8,12 +8,12 @@ import subprocess
 
 import z3
 
-from ..base import Exceptions
 from ..backends import BackendCircuitBin
+from ..base import Exceptions
 from ..interfaces import Circuit
 from ..util import IndexedLayout, Log
-
 from .base import PackerBase
+
 
 class SMTBase(PackerBase):
     timeout: int | None = None
@@ -138,9 +138,7 @@ class SMTBase(PackerBase):
 
         # The given layout must be respected.
         solver.add(
-            layout_constraints := [
-                placements[p][v] == True for v, p in circuit.layout.v2p.items()
-            ],
+            layout_constraints := [placements[p][v] == True for v, p in circuit.layout.v2p.items()],
         )
 
         # For each blocked physical qubit, no virtual qubit can be placed there.
@@ -252,9 +250,7 @@ class SMTBase(PackerBase):
 
             try:
                 model = dict(
-                    parse_name(name)
-                    for name, val in pattern.findall(model_str)
-                    if val == "true"
+                    parse_name(name) for name, val in pattern.findall(model_str) if val == "true"
                 )
             except Exception as error:
                 raise RuntimeError("could not parse model from z3 process output") from error
@@ -276,13 +272,16 @@ class SMTBase(PackerBase):
 
         return None
 
+
 class NonOptimizing(SMTBase):
     """
     Finds any suitable layout, even if not optimal.
     """
 
     def optimize(self, *args):
-        pass  # No optimization.
+        # No optimization.
+        pass
+
 
 class Minimizing(SMTBase):
     """
@@ -297,6 +296,7 @@ class Minimizing(SMTBase):
             z3.Or(phys_qubit_used[a], phys_qubit_used[b]) for a, b in bin.backend.edges_bidir
         ]
         solver.minimize(z3.Sum(coupler_used))
+
 
 class SoftConstraining(SMTBase):
     """
@@ -315,6 +315,7 @@ class SoftConstraining(SMTBase):
                 p_used == False,
                 str(len(bin.backend.neighbor_sets[p_index] - blocked)),
             )
+
 
 __all__ = (
     "NonOptimizing",

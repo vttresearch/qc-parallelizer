@@ -1,11 +1,13 @@
-from typing import Sequence, TYPE_CHECKING
+from collections.abc import Sequence
 from numbers import Real
+from typing import TYPE_CHECKING
 
 import qiskit
 import qiskit.circuit
 import qiskit.providers
 import qiskit.result
 import qiskit.transpiler
+
 
 class Types:
     Layout = list[int] | dict[int | qiskit.circuit.Qubit, int] | qiskit.transpiler.Layout
