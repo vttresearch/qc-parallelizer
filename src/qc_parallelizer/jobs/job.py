@@ -85,7 +85,7 @@ class ParallelizerJob:
             for backend in optimal_backends
         }
 
-        candidate_placements: list[tuple[Any, int, "BackendCircuitBin", Circuit]] = []
+        candidate_placements: list[tuple[Any, "BackendCircuitBin", Circuit]] = []
         max_candidates = self.backend.packer.max_candidates or float("inf")
 
         for candidate_bin in self.backend.manager.best_bins(translations):
@@ -103,35 +103,31 @@ class ParallelizerJob:
             )
             if completed_layout is not None:
                 completed_circuit = translated.with_layout(completed_layout)
-                rating = self.backend.packer.evaluate(candidate_bin, completed_circuit)
-                Log.debug(f"Received rating |{rating}| for placement candidate.")
-                if candidate_bin.is_empty:
-                    Log.debug((
-                        "Candidate bin is empty, applying "
-                        f"|{self.backend.packer.new_bin_penalty}| penalty to rating."
-                    ))
-                    rating *= self.backend.packer.new_bin_penalty
-                    Log.debug(f"Rating is now |{rating}|.")
+                cost = self.backend.packer.evaluate(candidate_bin, completed_circuit)
+                key = (
+                    candidate_bin.is_empty,    # makes currently empty bins inferior
+                    -cost,                     # actual cost
+                    len(candidate_placements), # tie breaker
+                )
+                Log.debug(f"Cost of placement candidate is |{cost}|.")
                 heapq.heappush(
                     candidate_placements,
-                    # The second element (length) is used to sort ties and avoid comparing bin
-                    # objects, which would be an error.
-                    (-rating, len(candidate_placements), candidate_bin, completed_circuit),
+                    (key, candidate_bin, completed_circuit),
                 )
                 if len(candidate_placements) >= max_candidates:
-                    Log.debug(f"Maximum candidate limit |{max_candidates}| reached.")
+                    Log.debug(f"Maximum candidate limit (|{max_candidates}|) reached.")
                     break
         else:
             Log.debug("All bin candidates exhausted.")
 
         Log.debug("Candidates:")
-        for rating, _, bin, _ in candidate_placements:
-            Log.debug(f" - Rating |{-rating}| in bin with ${bin.size} circuit$.")
+        for key, bin, _ in candidate_placements:
+            Log.debug(f" - Candidate with key |{key}| in bin with ${bin.size} circuit$.")
 
         if len(candidate_placements) > 0:
-            rating, _, bin, circuit = candidate_placements[0]
+            key, bin, circuit = candidate_placements[0]
             Log.debug(
-                f"![FOUND LAYOUT] Bin and layout with rating |{-rating}| found for circuit."
+                f"![FOUND LAYOUT] Bin and layout with key |{key}| found for circuit."
             )
             return bin, circuit
 
