@@ -57,7 +57,9 @@ class BackendManager:
         return sorted(
             compatible,
             key=lambda bin: (
-                bin.size == 0, # this forces empty bins to be considered last
+                # this forces empty bins to be considered last
+                bin.size == 0,
+                # ...and then the actual sorting criteria
                 (self[bin.backend].num_runs + self[bin.backend].num_nonempty_bins)
                 * bin.backend.cost,
                 bin.frac_taken,
@@ -65,6 +67,12 @@ class BackendManager:
         )
 
     def tick(self, auto_exec: bool = True):
+        """
+        Ticks, or updates, this manager. This means collecting ready bins, removing them from
+        tracking, converting the contained circuits into host circuits, submitting the host
+        circuits, and launching threads to collect results after jobs complete.
+        """
+
         ready_bins = (
             bin
             for bin in self.bins

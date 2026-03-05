@@ -121,8 +121,13 @@ class Parallelizer:
                 1 is used.
 
             auto_exec:
-                By default, when a backend gets completely occupied, the combined circuit is
-                submitted automatically. Passing False here disables this behaviour.
+                If True (default), jobs are automatically submitted when the associated host circuit
+                uses all qubits on the backend. If False, no submission happens unless job results
+                are explicitly requested.
+
+                Generally, when enabled, this should have a tiny positive impact on performance. It
+                can be useful to disable this for testing purposes or other situations where one
+                wishes to place circuits but not submit any jobs.
         """
 
         backends = convert_to_backend_list(backend_inputs)

@@ -7,10 +7,9 @@
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
-~~For an operational overview, see the diagram below.~~
+For an operational overview, see the diagram below.
 
-> **Under construction.** The parallelizer has recently undergone major internal restructuring. The
-  [old diagram](./notebooks/parallelizer-full.drawio.png) will be updated and added back soon.
+![the parallelizer diagram](./notebooks/parallelizer-v2.drawio.png)
 
 ## Why?
 

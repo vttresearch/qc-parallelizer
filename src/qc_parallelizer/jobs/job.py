@@ -63,7 +63,9 @@ class ParallelizerJob:
         self.id = uuid.uuid4()
         self.backend = backend
         self.circuit = circuit
-        self.original_circuit = circuit # for reference
+        # Take a second reference of the original circuit for comparisons later
+        self.original_circuit = circuit
+        self.placed: bool = False
         self.completion_requested: bool = False
         self.completed = threading.Event()
         self.remote_job: QiskitJob | None = None
@@ -110,9 +112,12 @@ class ParallelizerJob:
                 completed_circuit = translated.with_layout(completed_layout)
                 cost = self.backend.packer.evaluate(candidate_bin, completed_circuit)
                 key = (
-                    candidate_bin.is_empty,    # makes currently empty bins inferior
-                    -cost,                     # actual cost
-                    len(candidate_placements), # tie breaker
+                    # makes currently empty bins inferior
+                    candidate_bin.is_empty,
+                    # actual cost, sorted as descending
+                    -cost,
+                    # and a dummy tie breaker
+                    len(candidate_placements),
                 )
                 Log.debug(f"Cost of placement candidate is |{cost}|.")
                 heapq.heappush(
@@ -138,8 +143,10 @@ class ParallelizerJob:
         raise Exceptions.CircuitBackendCompatibility("circuit could not be placed on any backend")
 
     def place(self):
+        assert not self.placed, "circuit was attempted to be placed twice"
         bin, self.circuit = self._find_bin_layout()
         bin.place(self)
+        self.placed = True
         Log.debug(
             (
                 f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
@@ -212,8 +219,24 @@ class ParallelizerJobBatch:
         self.jobs = list(jobs)
 
     def place_all(self, sort: bool = True):
-        jobs = (
-            sorted(
+        """
+        Places all circuits in this batch onto available backends.
+
+        Args:
+            sort:
+                If True (default), circuits will be heuristically sorted to achieve a more optimal
+                packing. Currently, this means sorting by
+
+                 1. descending layout size (number of qubits with defined layout),
+                 2. ascending number of connected components in the circuit topology, divided by the
+                    number of qubits for a proportional metric, and
+                 3. descending number of qubits,
+
+                with priority in the listed order.
+        """
+
+        if sort:
+            jobs = sorted(
                 self.jobs,
                 key=lambda job: (
                     -job.circuit.layout.size,
@@ -221,9 +244,8 @@ class ParallelizerJobBatch:
                     -job.circuit.num_qubits,
                 ),
             )
-            if sort
-            else self.jobs
-        )
+        else:
+            jobs = self.jobs
 
         for job in jobs:
             Log.debug(
