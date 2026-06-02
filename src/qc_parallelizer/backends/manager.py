@@ -90,6 +90,7 @@ class BackendManager:
             host_circuit = bin.to_circuit()
 
             Log.info(f"Submitting job to backend |'{bin.backend.name}'|...")
+            Log.debug(lambda: f"Job kwargs: {bin.kwargs}")
             Log.debug(lambda: f"Circuit:\n{host_circuit.draw(idle_wires=False)}")
 
             remote_job = bin.backend.run(

@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import qiskit
 import qiskit.providers
 import qiskit.transpiler
+from qiskit.circuit import library as circuit_library
 
 from ..base import Exceptions
 from ..interfaces import Backend, Circuit
@@ -12,7 +13,7 @@ from . import Log
 def translate_for_backend(
     circuit: Circuit | qiskit.QuantumCircuit,
     backend: Backend | qiskit.providers.BackendV2,
-    optimization_level: int = 1,
+    optimization_level: int = 0,
     **pm_kwargs,
 ) -> Circuit | None:
     """
@@ -38,8 +39,9 @@ def translate_for_backend(
     # We create a fake target with couplers exactly where they are needed by the circuit. This way
     # the circuit is transpiled in place with no routing/layout.
 
+    standard_gates = circuit_library.get_standard_gate_name_mapping().keys()
     target = qiskit.transpiler.Target.from_configuration(
-        basis_gates=backend.operation_names,
+        basis_gates=[op for op in backend.operation_names if op in standard_gates],
         num_qubits=backend.num_qubits,
         coupling_map=qiskit.transpiler.CouplingMap(
             couplinglist=circuit.get_edges(),

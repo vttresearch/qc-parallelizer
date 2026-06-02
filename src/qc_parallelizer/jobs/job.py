@@ -2,6 +2,7 @@ import functools
 import heapq
 import operator
 import threading
+import typing
 import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -65,7 +66,7 @@ class ParallelizerJob:
         self.circuit = circuit
         # Take a second reference of the original circuit for comparisons later
         self.original_circuit = circuit
-        self.placed: bool = False
+        self.bin: BackendCircuitBin | None = None
         self.completion_requested: bool = False
         self.completed = threading.Event()
         self.remote_job: QiskitJob | None = None
@@ -143,16 +144,20 @@ class ParallelizerJob:
         raise Exceptions.CircuitBackendCompatibility("circuit could not be placed on any backend")
 
     def place(self, kwargs: dict[str, Any] = {}):
-        assert not self.placed, "circuit was attempted to be placed twice"
+        assert not self.is_placed, "circuit was attempted to be placed twice"
         bin, self.circuit = self._find_bin_layout(kwargs)
         bin.place(self, kwargs)
-        self.placed = True
+        self.bin = bin
         Log.debug(
             (
                 f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
                 f"|'{bin.backend.name}'|."
             ),
         )
+
+    @property
+    def is_placed(self):
+        return self.bin is not None
 
     @property
     def is_submitted(self):
@@ -256,7 +261,7 @@ class ParallelizerJobBatch:
                     f"|{job.circuit.layout.size}|."
                 ),
             )
-            job.place()
+            job.place(self.kwargs)
 
     def result(self, block: bool = True):
         """
@@ -308,9 +313,10 @@ class ParallelizerJobBatch:
         idle_coupler_color: str = "grey",
         qubit_size: int = 80,
         coupler_width: int = 25,
-        font_size: int = 24,
+        font_size: int | None = None,
         dpi: int = 100,
         figsize=None,
+        use_iqm_labeling: bool = False,
     ):
         """
         Plots this job's chosen layout(s) on the backend(s). Requires Matplotlib to be installed.
@@ -326,6 +332,9 @@ class ParallelizerJobBatch:
                 A color string for coloring idle qubits (from this job's perspective).
             idle_coupler_color:
                 A color string for coloring idle couplers (from this job's perspective).
+            use_iqm_labeling:
+                If True, qubits will be labeled by IQM convention (QB1, QB2, etc.). Otherwise, the
+                labels are simply the raw qubit indices.
 
         Returns:
             A Matplotlib Figure. If used in a notebook, this function takes care of closing unwanted
@@ -338,7 +347,12 @@ class ParallelizerJobBatch:
         except ImportError as exc:
             raise RuntimeError("missing optional dependencies") from exc
 
-        relevant_bins = {bin for job in self.jobs for bin in job.backend.manager.bins if job in bin}
+        relevant_bins = {job.bin for job in self.jobs}
+
+        # Do a little dance to make the type checker happy
+        assert None not in relevant_bins
+        relevant_bins = typing.cast(set["BackendCircuitBin"], relevant_bins)
+
         job_bins = {
             bin: [job for job in self.jobs if job in bin]
             for bin in relevant_bins
@@ -387,10 +401,13 @@ class ParallelizerJobBatch:
                 ax=axs[0, i],
                 planar=False,
                 qubit_size=qubit_size,
-                font_size=font_size,
+                font_size=font_size if font_size is not None else (18 if use_iqm_labeling else 24),
                 line_width=coupler_width,
                 qubit_color=qubit_colors,
                 line_color=coupler_colors,
+                qubit_labels=[f"QB{i + 1}" for i in range(bin.backend.num_qubits)]
+                if use_iqm_labeling
+                else None,
             )
 
         matplotlib.pyplot.tight_layout()
