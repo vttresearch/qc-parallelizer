@@ -92,7 +92,7 @@ Result(
 For the following commands, a virtual environment or equivalent isolation is recommended. This can
 be done with Conda, for example, with
 ```bash
-conda create --name parallelizer python=3.10 pip
+conda create --name parallelizer python=3.11 pip
 conda activate parallelizer
 ```
 
@@ -112,9 +112,6 @@ pip install .[notebooks]
 ```
 
 ## Testing
-
-> **Under construction.** The parallelizer has recently undergone major internal restructuring. All
-  tests are currently outdated.
 
 Running all tests is as simple as installing the required dependencies (see above) and running
 
@@ -136,7 +133,7 @@ from the repository root. Additionally, there is a benchmarking script in the `t
 - Batch jobs with identical measurements together. On backends with relatively long initialization
   times, batching can make a big difference.
 - Allow circuits to share physical qubits for temporally non-overlapping parts. This requires reset
-  instructions and makes the problem even more complex, so this a step for the distant future.
+  instructions and makes the problem computationally harder, so this a step for the distant future.
 
 ## Authors
 
