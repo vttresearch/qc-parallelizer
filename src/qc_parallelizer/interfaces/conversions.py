@@ -136,7 +136,7 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
         super().__init__(name=self.__class__.__name__)
         self.backend = backend
 
-    def run(self, run_input, **options): # type: ignore
+    def run(self, run_input, **options):  # type: ignore
         return ParallelizedQiskitJobAdapter(
             self,
             self.backend.run(run_input, **options),
@@ -147,11 +147,11 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
         return None
 
     @classmethod
-    def _default_options(cls): # type: ignore
-        return QiskitBackendOptions() # empty, but required for compatibility
+    def _default_options(cls):  # type: ignore
+        return QiskitBackendOptions()  # empty, but required for compatibility
 
     @property
-    def target(self): # type: ignore
+    def target(self):  # type: ignore
         return build_merged_target(self.backend.remote_backends)
 
 

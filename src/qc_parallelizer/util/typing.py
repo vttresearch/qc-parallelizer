@@ -82,7 +82,7 @@ T = TypeVar("T")
 
 def ensure_sequence(obj: T | Sequence[T], typ: type | UnionType) -> Sequence[T]:
     if isnestedinstance(obj, typ):
-        return [obj] # type: ignore
+        return [obj]  # type: ignore
     elif isnestedinstance(obj, Sequence[typ]):
-        return obj # type: ignore
+        return obj  # type: ignore
     raise TypeError(f"expected '{typ}' or a sequence thereof, got '{typestr(obj)}'")

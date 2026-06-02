@@ -79,7 +79,7 @@ class ParallelizerJob:
             self.backend.remote_backends,
         )
 
-    def _find_bin_layout(self):
+    def _find_bin_layout(self, kwarg_contraints: dict[str, Any] = {}):
         Log.debug(
             f"![FINDING LAYOUT] Determining layout for |{self.circuit.num_qubits}-qubit| "
             "circuit.",
@@ -93,7 +93,7 @@ class ParallelizerJob:
         candidate_placements: list[tuple[Any, "BackendCircuitBin", Circuit]] = []
         max_candidates = self.backend.packer.max_candidates or float("inf")
 
-        for candidate_bin in self.backend.manager.best_bins(translations):
+        for candidate_bin in self.backend.manager.best_bins(translations, kwarg_contraints):
             Log.debug(
                 (
                     f"Trying bin on backend |'{candidate_bin.backend.name}'| with "
@@ -142,10 +142,10 @@ class ParallelizerJob:
         Log.fail("No suitable bins found for circuit!")
         raise Exceptions.CircuitBackendCompatibility("circuit could not be placed on any backend")
 
-    def place(self):
+    def place(self, kwargs: dict[str, Any] = {}):
         assert not self.placed, "circuit was attempted to be placed twice"
-        bin, self.circuit = self._find_bin_layout()
-        bin.place(self)
+        bin, self.circuit = self._find_bin_layout(kwargs)
+        bin.place(self, kwargs)
         self.placed = True
         Log.debug(
             (
@@ -192,6 +192,7 @@ class ParallelizerJob:
             if block:
                 Log.debug("Blocking until job completion.")
                 self.completed.wait()
+                Log.debug("Blocking wait finished!")
         if not self.is_ready:
             return JobResult.empty()
         assert self.counts is not None
@@ -215,8 +216,9 @@ class ParallelizerJobBatch:
     jobs were just submitted together by user code.
     """
 
-    def __init__(self, jobs: Sequence[ParallelizerJob]):
+    def __init__(self, jobs: Sequence[ParallelizerJob], kwargs: dict[str, Any]):
         self.jobs = list(jobs)
+        self.kwargs = kwargs
 
     def place_all(self, sort: bool = True):
         """

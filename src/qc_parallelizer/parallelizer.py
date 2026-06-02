@@ -33,9 +33,12 @@ class ParallelizedBackend:
         self.remote_backends = backends
         self.auto_exec = auto_exec
 
-    def run(self, circuit_inputs: InputTypes.Circuits):
+    def run(self, circuit_inputs: InputTypes.Circuits, **kwargs):
         circuits = convert_to_circuit_list(circuit_inputs)
-        batch = ParallelizerJobBatch([ParallelizerJob(self, circuit) for circuit in circuits])
+        batch = ParallelizerJobBatch(
+            [ParallelizerJob(self, circuit) for circuit in circuits],
+            kwargs,
+        )
         batch.place_all()
         self.manager.tick(self.auto_exec)
         return batch

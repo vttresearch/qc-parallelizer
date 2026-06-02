@@ -1,6 +1,7 @@
 import collections
 import typing
 from collections.abc import Sequence
+from typing import Any
 
 from qiskit.providers import JobV1 as QiskitJob
 from qiskit.result import Result as QiskitJobResult
@@ -47,12 +48,16 @@ class BackendManager:
         self._ensure_empty_available()
         return [bin for backend in self.remote_backends.values() for bin in backend.bins]
 
-    def best_bins(self, backend_translations: dict[Backend, Circuit]):
+    def best_bins(
+        self,
+        backend_translations: dict[Backend, Circuit],
+        kwarg_constraints: dict[str, Any],
+    ):
         compatible = [
             bin
             for bin in self.bins
             if bin.backend in backend_translations
-            if bin.compatible(backend_translations[bin.backend])
+            if bin.compatible(backend_translations[bin.backend], kwarg_constraints)
         ]
         return sorted(
             compatible,
@@ -89,6 +94,7 @@ class BackendManager:
 
             remote_job = bin.backend.run(
                 host_circuit,
+                **bin.kwargs,
                 callback=lambda job, result, bin=bin: self._remote_job_completed(
                     job,
                     result,
@@ -108,6 +114,12 @@ class BackendManager:
         bin: BackendCircuitBin,
     ):
         Log.info(f"![JOB COMPLETE] Job |'{remote_job.job_id()}'| completed!")
+        if sum(len(cregs) for cregs in bin.cregs.values()) == 0:
+            Log.info("Job has no cregs and thus no results to retrieve.")
+            for job in bin:
+                job.mark_completed({})
+            return
+
         counts = typing.cast(dict[str, int], result.get_counts())
 
         sample_key = next(iter(counts.keys()))

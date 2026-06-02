@@ -62,9 +62,24 @@ def translate_for_backend(
 
     try:
         return Circuit(pm.run(circuit.unwrap()), circuit.layout)
-    except (qiskit.transpiler.TranspilerError, KeyError) as error:
-        Log.warn(f"Could not translate circuit for backend due to error |'{error}'|.")
-        return None
+    except BaseException as error:
+        # This is a little stupid. Modern Qiskit has parts implemented in Rust, which in some cases
+        # panics instead of raising a suitable exception (see e.g. [1]). Now, the panic manifests
+        # itself as a `pyo3_runtime.PanicException`, but that is not importable, and thus not
+        # catchable. It subclasses `BaseException` directly, and catching *all* `BaseException`s
+        # blindly is a bad idea. Instead, we catch all, then filter out the potential Python-
+        # friendly exceptions, then check if it is a Rust panic by simply comparing the error class
+        # name, and lastly re-raise if it was none of those.
+        #
+        # [1]: https://github.com/Qiskit/qiskit/issues/15116
+
+        if isinstance(error, (qiskit.transpiler.TranspilerError, KeyError)):
+            Log.warn(f"Could not translate circuit for backend due to error: |'{error}'|")
+            return None
+        elif error.__class__.__name__ == "PanicException":
+            Log.warn(f"Could not translate circuit for backend due to panic: |'{error}'|")
+            return None
+        raise
 
 
 class CircuitBackendTranslations:

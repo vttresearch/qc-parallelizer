@@ -1,5 +1,5 @@
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from qiskit import QuantumCircuit as QiskitCircuit
 from qiskit.circuit import ClassicalRegister
@@ -21,6 +21,7 @@ class BackendCircuitBin:
         self.backend = backend
         self.jobs: list["ParallelizerJob"] = []
         self.cregs: dict[ParallelizerJob, list[ClassicalRegister]] = {}
+        self.kwargs: dict[str, Any] = {}
         self._final: bool = False
 
     @property
@@ -94,13 +95,14 @@ class BackendCircuitBin:
             qubits |= layout.pindices
         return qubits
 
-    def compatible(self, circuit: Circuit) -> bool:
+    def compatible(self, circuit: Circuit, kwarg_constraints: dict[str, Any]) -> bool:
         """
         Checks if the given circuit and layout are compatible with the bin in its current state.
         This is only the case if
         - there are enough free qubits,
-        - there are enough free couplers (without actually considering the topology), and
-        - all physical qubits of the layout are still free.
+        - there are enough free couplers (without actually considering the topology),
+        - all physical qubits of the layout are still free, and
+        - keyword argument constraints (e.g. shot count equality) are fulfilled.
         """
         if self.num_free < circuit.num_qubits:
             return False
@@ -111,12 +113,15 @@ class BackendCircuitBin:
             for p in circuit.layout.pindices:
                 if p in taken:
                     return False
+        if not self.is_empty and self.kwargs != kwarg_constraints:
+            return False
         return True
 
-    def place(self, job: "ParallelizerJob"):
+    def place(self, job: "ParallelizerJob", kwargs: dict[str, Any]):
         assert job.circuit.is_complete_layout, "attempted to place circuit with incomplete layout"
         assert not self.is_final, "attempted to place circuit in finalized bin"
         self.jobs.append(job)
+        self.kwargs |= kwargs
 
     def finalize(self):
         """
