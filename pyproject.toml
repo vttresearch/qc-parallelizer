@@ -1,14 +1,14 @@
 [project]
 name = "qc-parallelizer"
-version = "1.3.2"
+version = "2.0.0"
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
     { name = "Henri Ahola", email = "firstname.lastname@vtt.fi" }
 ]
 readme = "README.pypi.md"
 license = "MIT"
-requires-python = ">= 3.10"
-dependencies = [ "qiskit >= 1.0, < 1.3", "z3-solver >= 4.0.0.0", "rustworkx >= 0.15.0" ]
+requires-python = ">= 3.11"
+dependencies = [ "qiskit < 2.2, >= 1.0", "z3-solver >= 4.0.0.0", "rustworkx >= 0.15.0" ]
 
 [project.urls]
 GitHub = "https://github.com/vttresearch/qc-parallelizer"
@@ -16,7 +16,8 @@ Notebooks = "https://github.com/vttresearch/qc-parallelizer/tree/main/notebooks"
 
 [project.optional-dependencies]
 tests = [ "iqm-client[qiskit]", "pytest", "pytest-cov" ]
-notebooks = [ "iqm-client[qiskit]", "ipykernel", "matplotlib", "pylatexenc" ]
+notebooks = [ "iqm-client[qiskit]", "ipykernel", "matplotlib", "pylatexenc", "ipywidgets" ]
+visualization = [ "matplotlib", "pylatexenc" ]
 
 [build-system]
 requires = [ "setuptools>=68.0.0", "setuptools_scm[toml]>=7" ]
@@ -33,10 +34,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = [ "F", "E", "W", "I001", "I002" ]
-ignore = [ "E101", "W191", "F401", "F811", "E712" ]
+ignore = [ "E101", "W191", "F401", "F811", "E712", "E261" ]
 # F401: ignore unused imports, breaks Pytest fixtures
 # F811: ignore redefinitions, also breaks Pytest fixtures
 # E712: ignore comparisons with False
+# E261: ignore inline comments less than two spaces after the end of the line
 
 [tool.ruff.format]
 indent-style = "space"

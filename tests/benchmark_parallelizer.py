@@ -14,13 +14,14 @@ import functools
 import json
 import os
 import pstats
+import re
 import shutil
 import sys
 import tempfile
 import time
 
-import qc_parallelizer as parallelizer
-from qc_parallelizer import packers
+from qc_parallelizer import Parallelizer, packers
+from qc_parallelizer.util import Log
 from utils import build_circuit_list, fake_54qb_backend_cluster
 
 # Enable/disable ANSI colors depending on output type (or user preference)
@@ -124,6 +125,11 @@ def init_benchmark():
 
 
 def get_packer(name: str):
+    # horrible, bleh
+    assert re.match(
+        r"[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_])+(?:\(\))?",
+        name,
+    ), f"unsupported packer '{name}'"
     return eval(f"packers.{name}")
 
 
@@ -137,7 +143,7 @@ def run_single(circuits_string: str, backends, packer: str, show: bool = False):
 
     packer_ = get_packer(packer)
     start = time.time()
-    rearranged = parallelizer.rearrange(circuits, backends, packer=packer_)
+    rearranged = Parallelizer(packer=packer_).across(backends, auto_exec=False).run(circuits)
     duration = time.time() - start
 
     print(
@@ -156,13 +162,10 @@ def run_single(circuits_string: str, backends, packer: str, show: bool = False):
         print(f" ~ {color}{perc}%{Color.Reset} of last run")
     else:
         print()
-    print(f"\nResult:\n{parallelizer.describe(rearranged, color=False)}", color=Color.Grey)
+    # print(f"\nResult:\n{len(rearranged.jobs)} jobs", color=Color.Grey)
 
     if show:
-        import matplotlib.pyplot as plt
-
-        parallelizer.visualization.plot_placements(rearranged)
-        plt.show()
+        rearranged.draw().show()
 
     benchmarks_run += 1
     history[circuits_string] = duration
@@ -179,7 +182,7 @@ def profile_multiple(
     pr = cProfile.Profile()
     print("Profiling...")
     for circs in circuit_lists:
-        pr.runcall(parallelizer.rearrange, circs, backends, packer=packer_)
+        pr.runcall(Parallelizer(packer=packer_).across(backends, auto_exec=False).run, circs)
     print("Done.")
     stats = pstats.Stats(pr)
     stats.sort_stats("cumtime").dump_stats(filename)
@@ -206,7 +209,7 @@ def search_for_maximum(gen_circuits_string, time_limit: float, backends, packer:
     def get_duration(index):
         circuits = build_circuit_list(gen_circuits_string(index))
         start = time.time()
-        parallelizer.rearrange(circuits, backends, packer=packer_)
+        Parallelizer(packer=packer_).across(backends, auto_exec=False).run(circuits)
         return time.time() - start
 
     def search():
@@ -257,7 +260,7 @@ if __name__ == "__main__":
     backends = fake_54qb_backend_cluster(args.num_qpus)
 
     if args.log:
-        parallelizer.Log.set_level("debug")
+        Log.set_level("debug")
 
     if args.profile:
         circuits = args.circuits or ["20 star", "20 h 1"]

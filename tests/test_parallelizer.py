@@ -2,8 +2,10 @@ import warnings
 
 import pytest
 import qiskit
-from qc_parallelizer import packers, parallelizer
-from qc_parallelizer.extensions import Backend, Circuit
+from qc_parallelizer import Parallelizer, packers
+from qc_parallelizer.backends import BackendCircuitBin
+from qc_parallelizer.base import Exceptions
+from qc_parallelizer.interfaces import Backend, Circuit
 from qc_parallelizer.util import IndexedLayout, translation
 
 from .utils import build_circuit_list, fake_5qb_backend, fake_20qb_backend, fake_54qb_backend
@@ -24,15 +26,17 @@ class TestParallelizer:
     def test_idle_qubit_removal(self, circuits, expected_rearranged_len):
         should_fail = expected_rearranged_len is None
         try:
+            backend = Parallelizer().across(fake_20qb_backend)
             with warnings.catch_warnings(record=True) as caught_warnings:
-                rearranged = parallelizer.rearrange(circuits, fake_20qb_backend)
+                rearranged = backend.run(circuits)
                 assert (len(caught_warnings) == 1) == should_fail
-        except parallelizer.Exceptions.CircuitBackendCompatibility:
+        except Exceptions.CircuitBackendCompatibility:
             assert should_fail
         else:
             assert not should_fail
+            rearranged.result()  # force completion
             assert expected_rearranged_len == {
-                backend: len(circuits) for backend, circuits in rearranged.items()
+                backend.unwrap(): count for backend, count in backend.backend_utilization.items()
             }
 
 
@@ -56,7 +60,7 @@ class TestTranspiling:
 
 class TestPackers:
     def test_packer_evaluate(self):
-        bin = packers.CircuitBin(fake_5qb_backend)
+        bin = BackendCircuitBin(Backend(fake_5qb_backend))
         packer = packers.PackerBase()
 
         circuit1 = qiskit.QuantumCircuit(5)
@@ -103,7 +107,7 @@ class TestPackers:
     )
     def test_packer_find_layout(self, circuit, expect_failure):
         circuit = Circuit(circuit)
-        bin = packers.CircuitBin(fake_54qb_backend)
+        bin = BackendCircuitBin(Backend(fake_54qb_backend))
         packer = packers.Defaults.Fast()
         layout = packer.find_layout(
             bin,
@@ -117,4 +121,4 @@ class TestPackers:
 
             for from_, to in circuit.get_edges():
                 phys_edge = tuple(sorted((layout.v2p[from_], layout.v2p[to])))
-                assert phys_edge in fake_54qb_backend.edges
+                assert phys_edge in bin.backend.edges

@@ -1,16 +1,15 @@
 # Quantum Circuit Parallelizer
 
-[![python](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org)
+[![python](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org)
 [![PyPI version](https://badge.fury.io/py/qc-parallelizer.svg)](https://pypi.org/project/qc-parallelizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
-
 
 A Python module for optimally combining and distributing quantum circuits. See the
 [included notebooks](./notebooks/) for examples and documentation.
 
 For an operational overview, see the diagram below.
 
-![diagram describing the module's internal operation](./notebooks/parallelizer-full.drawio.png)
+![the parallelizer diagram](./notebooks/parallelizer-v2.drawio.png)
 
 ## Why?
 
@@ -53,19 +52,39 @@ circuits = [QuantumCircuit(...), QuantumCircuit(...), ...]
 import iqm.qiskit_iqm as iqm
 backends = [iqm.IQMFakeAdonis(), iqm.IQMFakeAdonis()]
 
-# Parallelize and execute. This call will
-#  1. determine how to combine the circuits and for which backends, and
-#  2. submit jobs to the backends.
-import qc_parallelizer as parallelizer
-job = parallelizer.execute(circuits, backends=backends)
+# Instantiate the parallelizer, define usable backends, and run the circuits.
+from qc_parallelizer import Parallelizer
+job = Parallelizer().across(backends).run(circuits)
 
 # Fetch and handle results. This plots the first circuit's result histogram, for example.
-results = job.results()
-qiskit.visualization.plot_histogram(result[0].get_counts())
-# The job object behaves just like a regular Qiskit Job object, but values are arrays.
+results = job.result()
+qiskit.visualization.plot_histogram(results.get_counts(0))
+# Information about the execution is also available.
 print("Job IDs:")
-for job_id in job.job_id():
-    print(f" - {job_id}")
+for job, id in job.remote_ids.items():
+    print(f"- {id} (on '{job.remote_backend.name}')")
+```
+
+The parallelizer also supports emulation of a virtual parallelized backend that can be passed to
+other software. It functions as a regular backend, but automatically parallelizes any circuits that
+are submitted to it:
+
+```py
+>>> backend = Parallelizer().across(backends).as_qiskit_backend
+>>> isinstance(backend, BackendV2)
+True
+>>> backend.target
+<qiskit.transpiler.target.Target object at 0x71f0deadbeef>
+>>> job = backend.run(circuits)
+>>> isinstance(job, JobV1)
+True
+>>> job.result()
+Result(
+  backend_name='ParallelizedQiskitBackendAdapter',
+  backend_version='2',
+  job_id='8b019556-bb08-40b5-93ff-788ff1f7fb89',
+  results=[...]
+)
 ```
 
 ## Development setup
@@ -73,7 +92,7 @@ for job_id in job.job_id():
 For the following commands, a virtual environment or equivalent isolation is recommended. This can
 be done with Conda, for example, with
 ```bash
-conda create --name parallelizer python=3.10 pip
+conda create --name parallelizer python=3.11 pip
 conda activate parallelizer
 ```
 
@@ -111,12 +130,10 @@ from the repository root. Additionally, there is a benchmarking script in the `t
   the data manually. This is of course possible with custom packers already.
 - Add more tests! Numerous configurations have been tested manually with notebooks but more should
   be covered with unit testing.
-- Make `.execute()` batch jobs together. On backends with relatively long initialization times,
-  batching can make a big difference.
-- Is there a more efficient bin packing system? The problem is NP-hard, so this might require some
-  research on its own.
+- Batch jobs with identical measurements together. On backends with relatively long initialization
+  times, batching can make a big difference.
 - Allow circuits to share physical qubits for temporally non-overlapping parts. This requires reset
-  instructions and makes the problem even more complex, so this a step for the distant future.
+  instructions and makes the problem computationally harder, so this a step for the distant future.
 
 ## Authors
 

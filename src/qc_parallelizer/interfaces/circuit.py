@@ -1,12 +1,16 @@
 import json
+import typing
 import warnings
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import qiskit
 import qiskit.circuit
+from qiskit.circuit import Clbit, Qubit
+from qiskit.circuit import Instruction as QiskitInstruction
 
-from qc_parallelizer.base import Exceptions
-from qc_parallelizer.util import IndexedLayout
+from ..base import Exceptions
+from ..util import IndexedLayout
 
 
 class Circuit:
@@ -94,7 +98,7 @@ class Circuit:
         try:
             assert self._layout.vindices.issubset(circuit_indices)
         except AssertionError as error:
-            raise Exceptions.InvalidLayout() from error
+            raise Exceptions.InvalidLayout from error
 
     def with_layout(self, layout: Any):
         return type(self)(self._circuit, layout)
@@ -124,6 +128,10 @@ class Circuit:
         return self._circuit.num_clbits
 
     @property
+    def num_couplers(self):
+        return len(self.get_edges())
+
+    @property
     def num_connected_components(self):
         return self._circuit.num_connected_components()
 
@@ -146,6 +154,14 @@ class Circuit:
     @property
     def layout(self):
         return self._layout
+
+    @layout.setter
+    def layout(self, new_layout: IndexedLayout):
+        self._layout = new_layout
+
+    @property
+    def is_complete_layout(self):
+        return self._layout.vindices == set(range(self._circuit.num_qubits))
 
     @property
     def operations(self):
@@ -260,7 +276,8 @@ class Circuit:
         Returns an integer hash for the given circuit. Two circuits have the same hash if they have
         - the same number of qubits,
         - the same number of classical bits,
-        - the same operations, in the same order, with equal (qubit and classical bit) operands,
+        - the same operations, in the same order, with equal (qubit and classical bit) operands as
+          well as parameters,
         - the same global phase,
         - the same name*, and
         - the same metadata*.
@@ -270,15 +287,18 @@ class Circuit:
         Note: Python hashes strings with a random seed, so these hashes are consistent **only**
         within the same session.
         """
+
         operations = tuple(
-            [
-                (
-                    operation.name,
-                    tuple([self.index_of(q) for q in qubits]),
-                    tuple([self.index_of(c) for c in clbits]),
-                )
-                for operation, qubits, clbits in self._circuit.data
-            ],
+            (
+                operation.name,
+                tuple(operation.params),
+                tuple([self.index_of(q) for q in qubits]),
+                tuple([self.index_of(c) for c in clbits]),
+            )
+            for operation, qubits, clbits in typing.cast(
+                Iterable[tuple[QiskitInstruction, Sequence[Qubit], Sequence[Clbit]]],
+                self._circuit.data,
+            )
         )
         ophash = hash(
             (

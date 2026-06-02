@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 
 import qiskit
-from qc_parallelizer.extensions import Backend, Circuit, isnestedinstance, typestr
+from qc_parallelizer.interfaces import Backend, Circuit
 from qc_parallelizer.util import IndexedLayout
+from qc_parallelizer.util.typing import isnestedinstance, typestr
 
 
 class TestCircuitExtension:

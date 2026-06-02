@@ -5,7 +5,7 @@ import qiskit
 import qiskit.dagcircuit
 import qiskit.transpiler
 
-from qc_parallelizer.extensions.typing import isnestedinstance
+from .typing import isnestedinstance
 
 
 def layout_to_dict(
@@ -241,7 +241,7 @@ class IndexedLayout:
         return [v2p[v] if v in v2p else None for v in range(num_virtual)]
 
     def __repr__(self):
-        return f"QILayout(p2v={self._p2v.__repr__()})"
+        return f"{self.__class__.__name__}(p2v={self._p2v.__repr__()})"
 
     @staticmethod
     def _p2v_sort_key(item):
@@ -257,7 +257,10 @@ class IndexedLayout:
             + "}"
         )
 
-    def _iqmstr(self):
+    def __iqm_str__(self):
+        """
+        Like `__str__`, but uses IQM qubit labels (qubit 0 --> QB1, qubit 1 --> QB2, etc).
+        """
         return (
             "{"
             + ", ".join(

@@ -9,11 +9,10 @@ import qiskit
 from iqm.qiskit_iqm.fake_backends.fake_adonis import IQMFakeAdonis
 from iqm.qiskit_iqm.fake_backends.fake_aphrodite import IQMFakeAphrodite
 from iqm.qiskit_iqm.fake_backends.fake_apollo import IQMFakeApollo
-from qc_parallelizer.extensions import Backend
 
-fake_5qb_backend = Backend(IQMFakeAdonis())
-fake_20qb_backend = Backend(IQMFakeApollo())
-fake_54qb_backend = Backend(IQMFakeAphrodite())
+fake_5qb_backend = IQMFakeAdonis()
+fake_20qb_backend = IQMFakeApollo()
+fake_54qb_backend = IQMFakeAphrodite()
 
 
 def fake_54qb_backend_cluster(n: int):

@@ -1,3 +1,7 @@
+from collections.abc import Sequence
+from numbers import Real
+from typing import TYPE_CHECKING
+
 import qiskit
 import qiskit.circuit
 import qiskit.providers
@@ -9,6 +13,13 @@ class Types:
     Layout = list[int] | dict[int | qiskit.circuit.Qubit, int] | qiskit.transpiler.Layout
     Result = qiskit.result.result.Result
     Job = qiskit.providers.JobV1
+
+
+class InputTypes:
+    Circuit = qiskit.QuantumCircuit | tuple[qiskit.QuantumCircuit, Types.Layout]
+    Circuits = Circuit | Sequence[Circuit]
+    Backend = qiskit.providers.BackendV2 | tuple[qiskit.providers.BackendV2, Real]
+    Backends = Backend | Sequence[Backend]
 
 
 class Exceptions:

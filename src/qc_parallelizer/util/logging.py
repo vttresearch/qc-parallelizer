@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
@@ -70,11 +71,24 @@ class Log:
     Message = Callable[[], str] | str
 
     _max_caller_length: int = 30
-    _min_stack_depth: int = 100
+    _min_stack_depths: dict[threading.Thread, int] = {}
     _color_table: dict[str, dict[str, str]] = {}
+    _thread_ids: dict[int, int] = {}
     level: LogLevel = LogLevel.NONE
     color: bool = True
     force_builtin: bool = False
+    lock: threading.Lock = threading.Lock()
+
+    @classmethod
+    def min_stack_depth(cls, current_depth: int):
+        thread = threading.current_thread()
+        if thread not in cls._min_stack_depths:
+            depth = 100
+        else:
+            depth = cls._min_stack_depths[thread]
+        depth = min(depth, current_depth)
+        cls._min_stack_depths[thread] = depth
+        return depth
 
     @classmethod
     def _msgformatter(cls, match: re.Match[str]):
@@ -134,25 +148,34 @@ class Log:
         return cls._color_table[namespace][name]
 
     @classmethod
+    def _get_thread_num(cls):
+        thread_id = threading.get_ident()
+        if thread_id not in cls._thread_ids:
+            if thread_id == threading.main_thread().ident:
+                cls._thread_ids[thread_id] = 0
+            else:
+                cls._thread_ids[thread_id] = max(cls._thread_ids.values(), default=0) + 1
+        return cls._thread_ids[thread_id]
+
+    @classmethod
     def _formatcontext(cls, filename: str, lineno: int, stackdepth: int):
+        thread_str = f"[T{cls._get_thread_num()}]"
         lineno_str = str(lineno)
-        cls._min_stack_depth = min(cls._min_stack_depth, stackdepth)
-        adjusted_stackdepth = stackdepth - cls._min_stack_depth
+        adjusted_stackdepth = stackdepth - cls.min_stack_depth(stackdepth)
         if adjusted_stackdepth == 0:
             stackdepth_str = ""
-        elif adjusted_stackdepth == 1:
-            stackdepth_str = "> "
         else:
-            stackdepth_str = "~" * (adjusted_stackdepth - 1) + "> "
-        total_len = len(filename) + len(lineno_str) + len(stackdepth_str)
+            stackdepth_str = "~" * (adjusted_stackdepth - 1) + ">"
+        total_len = len(thread_str) + len(filename) + len(lineno_str) + len(stackdepth_str)
         cls._max_caller_length = max(cls._max_caller_length, total_len)
         if not cls.color:
             return (
-                f"{stackdepth_str}{filename}:{lineno_str}"
+                f"{thread_str}{stackdepth_str} {filename}:{lineno_str}"
                 f"{' ' * (cls._max_caller_length - total_len)}"
             )
         return (
-            f"{colorize_fg(stackdepth_str, color='grey')}"
+            f"{bold(colorize_fg(thread_str, color='grey'))}"
+            f"{colorize_fg(stackdepth_str, color='grey')} "
             f"{colorize_fg(filename, cls._color_for(filename, 'filename'))}"
             f"{colorize_fg(':', 'grey')}"
             f"{lineno_str}"
@@ -208,43 +231,44 @@ class Log:
         message to `logging` instead. See the class docstring for formatting guide.
         """
 
-        if level.value > cls.level.value:
-            return
+        with cls.lock:
+            if level.value > cls.level.value:
+                return
 
-        # Convert lambda to string, if necessary
-        msg_str = msg() if callable(msg) else msg
-        # Colorize vertical bars
-        msg_str = re.sub(r"\|([^\|]+)\|", cls._msgformatter, msg_str)
-        # Colorize (and pluralize, if needed) dollar signs
-        msg_str = re.sub(r"\$([^ \$]+) ([^\$]+)\$", cls._msgformatter_plural, msg_str)
-        # Format labels
-        msg_str = re.sub(r"^\!\[([^\]]+)\]", cls._labelformatter, msg_str)
+            # Convert lambda to string, if necessary
+            msg_str = msg() if callable(msg) else msg
+            # Colorize vertical bars
+            msg_str = re.sub(r"\|([^\|]+)\|", cls._msgformatter, msg_str)
+            # Colorize (and pluralize, if needed) dollar signs
+            msg_str = re.sub(r"\$([^ \$]+) ([^\$]+)\$", cls._msgformatter_plural, msg_str)
+            # Format labels
+            msg_str = re.sub(r"^\!\[([^\]]+)\]", cls._labelformatter, msg_str)
 
-        if cls.force_builtin:
-            logger = logging.getLogger(__name__)
-            logger.log(
-                {
-                    cls.LogLevel.DBUG: logging.DEBUG,
-                    cls.LogLevel.INFO: logging.INFO,
-                    cls.LogLevel.WARN: logging.WARN,
-                    cls.LogLevel.FAIL: logging.ERROR,
-                }[level],
-                msg_str,
+            if cls.force_builtin:
+                logger = logging.getLogger(__name__)
+                logger.log(
+                    {
+                        cls.LogLevel.DBUG: logging.DEBUG,
+                        cls.LogLevel.INFO: logging.INFO,
+                        cls.LogLevel.WARN: logging.WARN,
+                        cls.LogLevel.FAIL: logging.ERROR,
+                    }[level],
+                    msg_str,
+                )
+                return
+
+            stack = inspect.stack()
+            caller = inspect.getframeinfo(stack[2][0])
+            context_str = cls._formatcontext(
+                os.path.basename(caller.filename),
+                caller.lineno,
+                len(stack),
             )
-            return
 
-        stack = inspect.stack()
-        caller = inspect.getframeinfo(stack[2][0])
-        context_str = cls._formatcontext(
-            os.path.basename(caller.filename),
-            caller.lineno,
-            len(stack),
-        )
-
-        date_str = datetime.today().strftime("%Y-%m-%d %H:%M:%S.%f")
-        level_str = cls._formatlevel(level)
-        sep = colorize_fg(" | ", "grey")
-        for row in msg_str.split("\n"):
-            sys.stderr.write(
-                f"{date_str}{sep}{context_str}{sep}{level_str}{sep}{row}{ANSICodes.Reset}\n",
-            )
+            date_str = datetime.today().strftime("%Y-%m-%d %H:%M:%S.%f")
+            level_str = cls._formatlevel(level)
+            sep = colorize_fg(" | ", "grey")
+            for row in msg_str.split("\n"):
+                sys.stderr.write(
+                    f"{date_str}{sep}{context_str}{sep}{level_str}{sep}{row}{ANSICodes.Reset}\n",
+                )
