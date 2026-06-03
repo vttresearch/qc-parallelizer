@@ -107,12 +107,11 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
             for result in self.par_job.result(block=True)
         ]
         return QiskitResult(
-            self._backend.name,
-            self._backend.version,
-            None,
-            self.par_job.id,
-            True,
-            exp_results,
+            backend_name=self._backend.name,
+            backend_version=self._backend.version,
+            job_id=self.par_job.id,
+            success=True,
+            results=exp_results,
         )
 
     def cancel(self):
