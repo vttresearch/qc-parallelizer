@@ -111,6 +111,30 @@ pip install .[tests]
 pip install .[notebooks]
 ```
 
+### Logging
+
+For debugging, it can be extremely useful to enable logging. The project uses an internal logging library with a global
+configurable log level. You can enable everything with
+```py
+from qc_parallelizer.util import Log
+Log.set_level("debug")
+```
+or use the other levels (`"info"`, `"warn"`, `"fail"`) for less verbose logging. By default, it writes nicely formatted
+and coloured output to stderr, but you can configure it with these two class attributes:
+```py
+Log.color: bool         # Enables color, True by default, but this can mess with some environments
+Log.force_builtin: bool # Forwards everything to Python's logging module, False by default
+```
+The log lines are interpreted as follows:
+```
+2026-06-03 11:28:14.488510 | [T0]~~~> vf2.py:70               | DBUG | VF2++ generator created with `id_order` = False.
+^^^^^^^^^^^^^^^^^^^^^^^^^^    ^^ ^^^^ ^^^^^^ ^^                 ^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  `--> Timestamp               \    \      \   `-> Line number    `-> Log level      `-> Message
+                                \    \      `-> Source file
+                                 \    `-> Relative stack depth
+                                  `-> Thread number (assigned T0, T1, T2, ... in order of appearance)
+```
+
 ## Testing
 
 Running all tests is as simple as installing the required dependencies (see above) and running
