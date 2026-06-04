@@ -7,7 +7,10 @@ import threading
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, ParamSpec, TypeVar
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 class ANSICodes:
@@ -140,11 +143,14 @@ class Log:
             cls._color_table[namespace] = {}
         if name not in cls._color_table[namespace]:
             existing = set(cls._color_table[namespace].values())
-            cls._color_table[namespace][name] = next(
-                color
-                for color in ["cyan", "green", "magenta", "blue", "red", "yellow"]
-                if color not in existing
-            )
+            try:
+                cls._color_table[namespace][name] = next(
+                    color
+                    for color in ["cyan", "green", "magenta", "blue", "red", "yellow"]
+                    if color not in existing
+                )
+            except StopIteration:
+                cls._color_table[namespace][name] = "white"
         return cls._color_table[namespace][name]
 
     @classmethod
@@ -209,23 +215,23 @@ class Log:
                 cls.level = cls.LogLevel.FAIL
 
     @classmethod
-    def debug(cls, msg: Message):
-        cls.log(cls.LogLevel.DBUG, msg)
+    def debug(cls, msg: Message, **kwargs):
+        cls.log(cls.LogLevel.DBUG, msg, **kwargs)
 
     @classmethod
-    def info(cls, msg: Message):
-        cls.log(cls.LogLevel.INFO, msg)
+    def info(cls, msg: Message, **kwargs):
+        cls.log(cls.LogLevel.INFO, msg, **kwargs)
 
     @classmethod
-    def warn(cls, msg: Message):
-        cls.log(cls.LogLevel.WARN, msg)
+    def warn(cls, msg: Message, **kwargs):
+        cls.log(cls.LogLevel.WARN, msg, **kwargs)
 
     @classmethod
-    def fail(cls, msg: Message):
-        cls.log(cls.LogLevel.FAIL, msg)
+    def fail(cls, msg: Message, **kwargs):
+        cls.log(cls.LogLevel.FAIL, msg, **kwargs)
 
     @classmethod
-    def log(cls, level: LogLevel, msg: Message):
+    def log(cls, level: LogLevel, msg: Message, strip_stack: int = 0):
         """
         Formats and logs the message to stderr. If the `force_builtin` boolean is set, sends the
         message to `logging` instead. See the class docstring for formatting guide.
@@ -258,11 +264,11 @@ class Log:
                 return
 
             stack = inspect.stack()
-            caller = inspect.getframeinfo(stack[2][0])
+            caller = inspect.getframeinfo(stack[2 + strip_stack][0])
             context_str = cls._formatcontext(
                 os.path.basename(caller.filename),
                 caller.lineno,
-                len(stack),
+                len(stack) - 2 - strip_stack,
             )
 
             date_str = datetime.today().strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -272,3 +278,54 @@ class Log:
                 sys.stderr.write(
                     f"{date_str}{sep}{context_str}{sep}{level_str}{sep}{row}{ANSICodes.Reset}\n",
                 )
+
+    @classmethod
+    def debug_dump(cls):
+        """
+        Dumps process ID, thread ID/name, and stack listing with files, line numbers and current
+        functions names.
+        """
+
+        def format_frame(frame):
+            info = inspect.getframeinfo(frame[0])
+            filename = info.filename
+            for base in sys.path:
+                if base and filename.startswith(base):
+                    loc = base.rsplit("/", 1)[-1]
+                    file = filename.removeprefix(base).strip("/")
+                    if file.startswith("site-packages"):
+                        file = file.removeprefix("site-packages/")
+                        loc = "site-packages"
+                    filename = f"{loc}/{file}"
+                    break
+            return f"{filename}:{info.lineno} in |{info.function}|()"
+
+        stack = inspect.stack()[1:][::-1]
+        lines = [
+            "![DEBUG DUMP]",
+            (
+                f"Process |{os.getpid()}|, thread |'{threading.current_thread().name}'|/"
+                f"|{threading.get_ident()}|/|{threading.get_native_id()}|"
+            ),
+            "Stack:",
+            *(f"{i:3d}: {format_frame(frame)}" for i, frame in enumerate(stack)),
+        ]
+        cls.debug("\n".join(lines), strip_stack=1)
+
+    @classmethod
+    def trace(cls, func: Callable[P, T]) -> Callable[P, T]:
+        """
+        A function decorator that logs (with debug level) when the function is entered and left.
+        """
+
+        # TODO: use TLS to store information that we are already in a traced call and that nested
+        # calls should not be logged!
+        # threadLocal = threading.local() etc
+
+        def wrapped(*args, **kwargs):
+            cls.debug(f"> Entering |{func.__qualname__}|!", strip_stack=1)
+            ret = func(*args, **kwargs)
+            cls.debug(f"< Left |{func.__qualname__}|!", strip_stack=1)
+            return ret
+
+        return wrapped
