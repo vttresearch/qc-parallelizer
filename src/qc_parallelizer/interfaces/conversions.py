@@ -1,7 +1,7 @@
 import typing
 from collections.abc import Sequence
 from numbers import Real
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from qiskit.circuit import Instruction as QiskitInstruction
 from qiskit.circuit import QuantumCircuit as QiskitCircuit
@@ -30,7 +30,6 @@ from qiskit.transpiler import (
 from qiskit.transpiler import (
     Target as QiskitBackendTarget,
 )
-from typing_extensions import assert_never
 
 from ..base import InputTypes, Types
 from ..util.typing import ensure_sequence, isnestedinstance
@@ -134,6 +133,27 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
     def __init__(self, backend: "ParallelizedBackend"):
         super().__init__(name=self.__class__.__name__)
         self.backend = backend
+
+    """
+    Re: __copy__ and __deepcopy__ below, in some configurations*, the Qiskit primitives (sampler and
+    estimator) deepcopy the given backend, which messes with the parallelizer that tries to keep
+    track of jobs submitted to each backend. The code path is ... > [1] > [2]. Without these
+    overridden copy methods, a new instance is created every time the primitive is invoked, which
+    then cripples the parallelizer.
+
+    *) Not sure what the conditions are. Using the bare `BackendEstimatorV2` does not exhibit this
+       issue, but PennyLane, which uses it under the hood, does.
+
+    https://github.com/Qiskit/qiskit-ibm-runtime/blob/0.45.1/qiskit_ibm_runtime/...
+    [1]: base_primitive.py#L176
+    [2]: fake_provider/local_service.py#L172
+    """
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
 
     def run(self, run_input, **options):  # type: ignore
         return ParallelizedQiskitJobAdapter(
