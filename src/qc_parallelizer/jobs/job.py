@@ -144,16 +144,17 @@ class ParallelizerJob:
         raise Exceptions.CircuitBackendCompatibility("circuit could not be placed on any backend")
 
     def place(self, kwargs: dict[str, Any] = {}):
-        assert not self.is_placed, "circuit was attempted to be placed twice"
-        bin, self.circuit = self._find_bin_layout(kwargs)
-        bin.place(self, kwargs)
-        self.bin = bin
-        Log.debug(
-            (
-                f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
-                f"|'{bin.backend.name}'|."
-            ),
-        )
+        with self.backend.manager.lock:
+            assert not self.is_placed, "circuit was attempted to be placed twice"
+            bin, self.circuit = self._find_bin_layout(kwargs)
+            bin.place(self, kwargs)
+            self.bin = bin
+            Log.debug(
+                (
+                    f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
+                    f"|'{bin.backend.name}'|."
+                ),
+            )
 
     @property
     def is_placed(self):
@@ -183,6 +184,7 @@ class ParallelizerJob:
 
         if self.is_ready:
             return
+        Log.info("Job completion requested!")
         self.completion_requested = True
         self.backend.manager.tick()
 
@@ -262,6 +264,14 @@ class ParallelizerJobBatch:
                 ),
             )
             job.place(self.kwargs)
+
+    def request_completion(self):
+        """
+        Requests for all jobs in this batch to complete as soon as possible.
+        """
+
+        for job in self.jobs:
+            job.request_completion()
 
     def result(self, block: bool = True):
         """

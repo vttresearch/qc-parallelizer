@@ -1,4 +1,5 @@
 import collections
+import threading
 import typing
 from collections.abc import Sequence
 from typing import Any
@@ -24,8 +25,11 @@ class ManagedBackend:
 
 
 class BackendManager:
+    lock: threading.Lock
+
     def __init__(self):
         self.remote_backends: dict[Backend, ManagedBackend] = {}
+        self.lock = threading.Lock()
 
     def register(self, backends: Sequence[Backend]):
         as_set = set(backends)
@@ -89,9 +93,14 @@ class BackendManager:
             self[bin.backend].bins.remove(bin)
             host_circuit = bin.to_circuit()
 
-            Log.info(f"Submitting job to backend |'{bin.backend.name}'|...")
+            Log.info(
+                (
+                    f"Submitting job to backend |'{bin.backend.name}'| (|{bin.backend}| --> "
+                    f"|{bin.backend.unwrap()}|)..."
+                ),
+            )
             Log.debug(lambda: f"Job kwargs: {bin.kwargs}")
-            Log.debug(lambda: f"Circuit:\n{host_circuit.draw(idle_wires=False)}")
+            Log.debug(lambda: f"Circuit:\n{host_circuit.draw(fold=-1, idle_wires=False)}")
 
             remote_job = bin.backend.run(
                 host_circuit,
