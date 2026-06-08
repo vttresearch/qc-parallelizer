@@ -167,6 +167,17 @@ class Circuit:
     def operations(self):
         return self._circuit.data
 
+    @property
+    def gate_set(self):
+        """
+        The set of operations that this circuit uses, e.g. `{"cx", "h", "measure"}`.
+        """
+
+        gates: set[str] = set()
+        for instruction in self._circuit.data:
+            gates.add(instruction.operation.name)
+        return gates
+
     def count_gates(self):
         """
         Returns gate counts for each qubit in the given circuit, including measurements, but
