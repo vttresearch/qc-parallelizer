@@ -35,9 +35,7 @@ class TestParallelizer:
         else:
             assert not should_fail
             rearranged.result()  # force completion
-            assert expected_rearranged_len == {
-                backend.unwrap(): count for backend, count in backend.backend_utilization.items()
-            }
+            assert expected_rearranged_len == backend.backend_utilization
 
 
 class TestTranspiling:

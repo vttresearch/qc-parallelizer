@@ -32,7 +32,7 @@ def translate_for_backend(
     if isinstance(circuit, qiskit.QuantumCircuit):
         circuit = Circuit(circuit)
 
-    Log.debug(
+    Log.info(
         f"Translating |{circuit.num_qubits}-qubit| circuit for backend |'{backend.name}'|.",
     )
 
@@ -40,8 +40,18 @@ def translate_for_backend(
     # the circuit is transpiled in place with no routing/layout.
 
     standard_gates = circuit_library.get_standard_gate_name_mapping().keys()
+    filtered_gates = [op for op in backend.operation_names if op in standard_gates]
+    Log.debug(
+        lambda: (
+            f"Backend supports gates |{backend.operation_names}|, out of which |{filtered_gates}| "
+            "are recognised by Qiskit."
+        ),
+    )
+    if len(filtered_gates) < len(backend.operation_names):
+        diff = list(set(backend.operation_names) - set(filtered_gates))
+        Log.warn(f"Discarded unsupported gates |{diff}|!")
     target = qiskit.transpiler.Target.from_configuration(
-        basis_gates=[op for op in backend.operation_names if op in standard_gates],
+        basis_gates=filtered_gates,
         num_qubits=backend.num_qubits,
         coupling_map=qiskit.transpiler.CouplingMap(
             couplinglist=circuit.get_edges(),
@@ -63,7 +73,13 @@ def translate_for_backend(
     pm.routing = None
 
     try:
-        return Circuit(pm.run(circuit.unwrap()), circuit.layout)
+        translation = Circuit(pm.run(circuit.unwrap()), circuit.layout)
+        Log.info(
+            lambda: f"Translated circuit with depth |{circuit.depth}| and gate set "
+            f"|{circuit.gate_set}| to circuit with depth |{translation.depth}| and gate set "
+            f"|{translation.gate_set}|.",
+        )
+        return translation
     except BaseException as error:
         # This is a little stupid. Modern Qiskit has parts implemented in Rust, which in some cases
         # panics instead of raising a suitable exception (see e.g. [1]). Now, the panic manifests
@@ -172,6 +188,12 @@ class CircuitBackendTranslations:
         }
 
         if len(translated_circuit_set) != len(circuits):
+            bad_circuits = [
+                circuit for circuit in circuits if circuit.hash() not in translated_circuit_set
+            ]
+            Log.fail("The following circuits could not be translated for any backend:")
+            for circuit in bad_circuits:
+                Log.fail(lambda: f"{circuit.unwrap().draw(fold=-1, idle_wires=False)}")
             raise Exceptions.CircuitBackendCompatibility(
                 "could not translate circuit for any backend",
             )

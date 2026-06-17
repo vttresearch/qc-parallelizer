@@ -80,7 +80,7 @@ class Log:
     level: LogLevel = LogLevel.NONE
     color: bool = True
     force_builtin: bool = False
-    lock: threading.Lock = threading.Lock()
+    lock: threading.RLock = threading.RLock()
 
     @classmethod
     def min_stack_depth(cls, current_depth: int):
@@ -142,15 +142,8 @@ class Log:
         if namespace not in cls._color_table:
             cls._color_table[namespace] = {}
         if name not in cls._color_table[namespace]:
-            existing = set(cls._color_table[namespace].values())
-            try:
-                cls._color_table[namespace][name] = next(
-                    color
-                    for color in ["cyan", "green", "magenta", "blue", "red", "yellow"]
-                    if color not in existing
-                )
-            except StopIteration:
-                cls._color_table[namespace][name] = "white"
+            avail = ["cyan", "green", "magenta", "blue", "red", "yellow"]
+            cls._color_table[namespace][name] = avail[len(cls._color_table[namespace]) % len(avail)]
         return cls._color_table[namespace][name]
 
     @classmethod
@@ -278,6 +271,7 @@ class Log:
                 sys.stderr.write(
                     f"{date_str}{sep}{context_str}{sep}{level_str}{sep}{row}{ANSICodes.Reset}\n",
                 )
+            sys.stderr.flush()
 
     @classmethod
     def debug_dump(cls):
@@ -286,6 +280,9 @@ class Log:
         functions names.
         """
 
+        if cls.level.value != cls.LogLevel.DBUG.value:
+            return
+
         def format_frame(frame):
             info = inspect.getframeinfo(frame[0])
             filename = info.filename
@@ -293,7 +290,7 @@ class Log:
                 if base and filename.startswith(base):
                     loc = base.rsplit("/", 1)[-1]
                     file = filename.removeprefix(base).strip("/")
-                    if file.startswith("site-packages"):
+                    if file.startswith("site-packages/"):
                         file = file.removeprefix("site-packages/")
                         loc = "site-packages"
                     filename = f"{loc}/{file}"

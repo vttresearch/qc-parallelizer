@@ -10,6 +10,8 @@ from qiskit.providers import JobV1 as QiskitJob
 from qiskit.result import Result as QiskitJobResult
 from qiskit.transpiler import Target as QiskitBackendTarget
 
+from ..util import Log
+
 
 class Backend:
     """
@@ -131,28 +133,40 @@ class Backend:
         self,
         *args,
         callback: Callable[[QiskitJob, QiskitJobResult], Any] | None = None,
+        wait_for_job: bool = True,
         **kwargs,
-    ):
+    ) -> None | QiskitJob:
         """
         Executes a circuit on this backend. This is a thin wrapper around the real backend's
         `.run()` method with most args and kwargs left intact.
 
         Params:
             callback:
-                An optional callback function that will be called when the job finishes. A new
-                thread is started to wait for job completition. This thread is also responsible for
-                invoking the callback, so please ensure that operations carried out by the callback
-                are thread-safe.
+                An optional callback function that will be called when the job finishes. Please
+                ensure that operations carried out by the callback are thread-safe.
 
                 The callback function receives two arguments: the remote Qiskit job and its result.
+            wait_for_job:
+                If True, this method blocks until the job instance has been created and returned by
+                the backend. For certain local simulators, this only happens _after_ execution
+                finishes. If False, this method returns immediately with either a job instance if
+                it was created instantly, or no value otherwise.
         """
 
-        job = typing.cast(QiskitJob, self._backend.run(*args, **kwargs))
-        if callable(callback):
-            callback_thread = threading.Thread(
-                target=lambda: callback(job, job.result()),
-                name=f"JobCallback<{job.job_id()}>",
-                daemon=True,
-            )
-            callback_thread.start()
+        job: QiskitJob | None = None
+        job_flag = threading.Event()
+
+        def job_func():
+            nonlocal job
+            job = typing.cast(QiskitJob, self._backend.run(*args, **kwargs))
+            job_flag.set()
+            if callable(callback):
+                callback(job, job.result())
+
+        job_thread = threading.Thread(target=job_func)
+        job_thread.start()
+
+        if wait_for_job:
+            job_flag.wait()
+            assert job is not None
         return job

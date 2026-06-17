@@ -87,6 +87,9 @@ Result(
 )
 ```
 
+Likewise, the parallelized backend can be supplied to PennyLane with `.as_pennylane_device`. See
+[the PennyLane demo notebook](./notebooks/pennylane.ipynb) for an example.
+
 ## Development setup
 
 For the following commands, a virtual environment or equivalent isolation is recommended. This can

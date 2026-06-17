@@ -1,12 +1,15 @@
 import functools
 import heapq
 import operator
+import tempfile
 import threading
+import time
 import typing
 import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from qiskit import qpy
 from qiskit.circuit import QuantumCircuit as QiskitCircuit
 from qiskit.providers import JobV1 as QiskitJob
 
@@ -14,6 +17,7 @@ from ..base import Exceptions
 from ..interfaces import Backend, Circuit
 from ..util import Log
 from ..util.translation import CircuitBackendTranslations
+from ..util.visualization import plot_job_batch
 
 if TYPE_CHECKING:
     from ..backends import BackendCircuitBin
@@ -55,12 +59,35 @@ class BatchedJobResult:
         return repr(self.results)
 
 
+class JobTiming:
+    created: float
+    placed: float | None
+    submitted: float | None
+    completed: float | None
+    requested: float | None
+
+    def __init__(self):
+        self.created = time.time()
+        self.placed = None
+        self.submitted = None
+        self.completed = None
+        self.requested = None
+
+    @property
+    def as_tuple(self):
+        return self.created, self.placed, self.submitted, self.completed, self.requested
+
+
 class ParallelizerJob:
     """
     A single parallelized circuit execution.
     """
 
-    def __init__(self, backend: "ParallelizedBackend", circuit: Circuit):
+    def __init__(
+        self,
+        backend: "ParallelizedBackend",
+        circuit: Circuit,
+    ):
         self.id = uuid.uuid4()
         self.backend = backend
         self.circuit = circuit
@@ -72,12 +99,14 @@ class ParallelizerJob:
         self.remote_job: QiskitJob | None = None
         self.remote_backend: Backend | None = None
         self.counts: dict[str, int] | None = None
+        self.timing = JobTiming()
 
     @functools.cached_property
     def translations(self) -> CircuitBackendTranslations:
         return CircuitBackendTranslations.generate(
             self.circuit,
             self.backend.remote_backends,
+            **self.backend.parent.translation_kwargs,
         )
 
     def _find_bin_layout(self, kwarg_contraints: dict[str, Any] = {}):
@@ -131,7 +160,7 @@ class ParallelizerJob:
         else:
             Log.debug("All bin candidates exhausted.")
 
-        Log.debug("Candidates:")
+        Log.debug(f"Candidates (${len(candidate_placements)} item$):")
         for key, bin, _ in candidate_placements:
             Log.debug(f" - Candidate with key |{key}| in bin with ${bin.size} circuit$.")
 
@@ -140,7 +169,14 @@ class ParallelizerJob:
             Log.debug(f"![FOUND LAYOUT] Bin and layout with key |{key}| found for circuit.")
             return bin, circuit
 
-        Log.fail("No suitable bins found for circuit!")
+        Log.fail("No suitable bins found for circuit:")
+        Log.fail(lambda: f"{self.original_circuit.unwrap().draw(fold=-1, idle_wires=False)}")
+
+        circuit_file = tempfile.NamedTemporaryFile("wb", delete=False)
+        qpy.dump(self.original_circuit.unwrap(), circuit_file)  # type: ignore
+        circuit_file.close()
+        Log.info(f"Circuit serialized to |{circuit_file.name}|.")
+
         raise Exceptions.CircuitBackendCompatibility("circuit could not be placed on any backend")
 
     def place(self, kwargs: dict[str, Any] = {}):
@@ -149,6 +185,7 @@ class ParallelizerJob:
             bin, self.circuit = self._find_bin_layout(kwargs)
             bin.place(self, kwargs)
             self.bin = bin
+            self.timing.placed = time.time()
             Log.debug(
                 (
                     f"|{self.circuit.num_qubits}-qubit| circuit translated and placed on backend "
@@ -182,19 +219,21 @@ class ParallelizerJob:
         the parallelization is not optimal. If the job has already completed, does nothing.
         """
 
+        if self.timing.requested is None:
+            self.timing.requested = time.time()
         if self.is_ready:
             return
         Log.info("Job completion requested!")
         self.completion_requested = True
         self.backend.manager.tick()
 
-    def result(self, block: bool = True):
+    def result(self, block: bool = True, request_completion: bool = True):
         """
         Retrieves the result of this job, blocking until it becomes available. Alternatively, if
         `block` is set to False, returns None immediately if there are no results yet.
         """
 
-        if not self.is_ready:
+        if not self.is_ready and request_completion:
             self.request_completion()
             if block:
                 Log.debug("Blocking until job completion.")
@@ -205,11 +244,18 @@ class ParallelizerJob:
         assert self.counts is not None
         return JobResult(self.counts)
 
-    def mark_submitted(self, remote_backend: Backend, remote_job: QiskitJob):
+    def mark_submitted(
+        self,
+        remote_backend: Backend,
+        remote_job: QiskitJob,
+        at_time: float | None = None,
+    ):
+        self.timing.submitted = at_time or time.time()
         self.remote_backend = remote_backend
         self.remote_job = remote_job
 
-    def mark_completed(self, counts: dict[str, int]):
+    def mark_completed(self, counts: dict[str, int], at_time: float | None = None):
+        self.timing.completed = at_time or time.time()
         self.counts = counts
         self.completed.set()
 
@@ -223,9 +269,15 @@ class ParallelizerJobBatch:
     jobs were just submitted together by user code.
     """
 
-    def __init__(self, jobs: Sequence[ParallelizerJob], kwargs: dict[str, Any]):
+    def __init__(
+        self,
+        jobs: Sequence[ParallelizerJob],
+        kwargs: dict[str, Any],
+        sync_wait: float = 0.2,
+    ):
         self.jobs = list(jobs)
         self.kwargs = kwargs
+        self.sync_wait = sync_wait
 
     def place_all(self, sort: bool = True):
         """
@@ -273,18 +325,33 @@ class ParallelizerJobBatch:
         for job in self.jobs:
             job.request_completion()
 
-    def result(self, block: bool = True):
+    def result(self, block: bool = True, sync_wait: float | None = None):
         """
         Retrives the result(s) of this batch, blocking until they are available. Alternatively, if
         `block` is set to False, returns some or no results immediately depending on availability.
         The returned object is effectively a snapshot, so if some results are not available, this
         method must be called again at a later time.
+
+        Args:
+            block:
+                If True, blocks until results are ready. If False, return (possibly) partial
+                results immediately.
+            sync_wait:
+                Time to wait (in seconds) before requesting for results from the underlying
+                backends. In multi-threaded applications, this can be very beneficial if several
+                threads submit jobs and request results in parallel. Leaving this as None will use
+                a shared pre-set value for the whole parallelized backend.
         """
 
+        for job in self.jobs:
+            if job.timing.requested is None:
+                job.timing.requested = time.time()
+        if not self.is_ready:
+            time.sleep(sync_wait or self.sync_wait)
         if block:
             for job in self.jobs:
                 job.request_completion()
-        return BatchedJobResult([job.result(block) for job in self.jobs])
+        return BatchedJobResult([job.result(block, request_completion=block) for job in self.jobs])
 
     @property
     def is_ready(self):
@@ -308,121 +375,13 @@ class ParallelizerJobBatch:
             for job in self.jobs
         }
 
-    def draw(
-        self,
-        circuit_colors: list[str] = [
-            "#dd0000",
-            "#008800",
-            "#0000bb",
-            "#0099aa",
-            "#aa00aa",
-            "#aa9900",
-        ],
-        active_coupler_color: str = "black",
-        idle_qubit_color: str = "grey",
-        idle_coupler_color: str = "grey",
-        qubit_size: int = 80,
-        coupler_width: int = 25,
-        font_size: int | None = None,
-        dpi: int = 100,
-        figsize=None,
-        use_iqm_labeling: bool = False,
-    ):
+    def draw(self, *args, **kwargs):
         """
         Plots this job's chosen layout(s) on the backend(s). Requires Matplotlib to be installed.
-        Required dependencies can be installed with `pip install qc_parallelizer[visualization]`.
-
-        Args:
-            circuit_colors:
-                A list of color strings that will be cycled through to color different circuits in
-                each bin.
-            active_coupler_color:
-                A color string for coloring active couplers.
-            idle_qubit_color:
-                A color string for coloring idle qubits (from this job's perspective).
-            idle_coupler_color:
-                A color string for coloring idle couplers (from this job's perspective).
-            use_iqm_labeling:
-                If True, qubits will be labeled by IQM convention (QB1, QB2, etc.). Otherwise, the
-                labels are simply the raw qubit indices.
-
-        Returns:
-            A Matplotlib Figure. If used in a notebook, this function takes care of closing unwanted
-            duplicates that may be displayed automatically.
+        See `qc_parallelizer.util.visualization.plot_job_batch` for details.
         """
 
-        try:
-            import matplotlib.pyplot
-            import qiskit.visualization.utils
-        except ImportError as exc:
-            raise RuntimeError("missing optional dependencies") from exc
-
-        relevant_bins = {job.bin for job in self.jobs}
-
-        # Do a little dance to make the type checker happy
-        assert None not in relevant_bins
-        relevant_bins = typing.cast(set["BackendCircuitBin"], relevant_bins)
-
-        job_bins = {
-            bin: [job for job in self.jobs if job in bin]
-            for bin in relevant_bins
-            if not bin.is_empty
-        }
-
-        fig, axs = matplotlib.pyplot.subplots(
-            ncols=len(job_bins),
-            dpi=dpi,
-            figsize=figsize,
-            squeeze=False,
-        )
-
-        def get_qubit_colors(qubit_indices, num_qubits):
-            indices = [None] * num_qubits
-            for i, qubits in enumerate(qubit_indices):
-                for q in qubits:
-                    indices[q] = i
-            return [
-                circuit_colors[i % len(circuit_colors)] if i is not None else idle_qubit_color
-                for i in indices
-            ]
-
-        def get_coupler_colors(circuit_couplers, backend_couplers):
-            return [
-                active_coupler_color if (a, b) in circuit_couplers else idle_coupler_color
-                for a, b in backend_couplers
-            ]
-
-        for i, (bin, jobs) in enumerate(job_bins.items()):
-            qubit_indices = [job.layout.pindices for job in jobs]
-            all_couplers = [
-                edge
-                for job in jobs
-                for edge in (
-                    (job.layout.v2p[a], job.layout.v2p[b])
-                    for a, b in job.circuit.get_edges(bidir=True)
-                )
-            ]
-            qubit_colors = get_qubit_colors(qubit_indices, bin.backend.num_qubits)
-            coupler_colors = get_coupler_colors(all_couplers, bin.backend.edges)
-            qiskit.visualization.plot_coupling_map(
-                num_qubits=bin.backend.num_qubits,
-                qubit_coordinates=None,
-                coupling_map=bin.backend.edges,
-                ax=axs[0, i],
-                planar=False,
-                qubit_size=qubit_size,
-                font_size=font_size if font_size is not None else (18 if use_iqm_labeling else 24),
-                line_width=coupler_width,
-                qubit_color=qubit_colors,
-                line_color=coupler_colors,
-                qubit_labels=[f"QB{i + 1}" for i in range(bin.backend.num_qubits)]
-                if use_iqm_labeling
-                else None,
-            )
-
-        matplotlib.pyplot.tight_layout()
-        qiskit.visualization.utils.matplotlib_close_if_inline(fig)
-        return fig
+        return plot_job_batch(self, *args, **kwargs)
 
     def __getitem__(self, index: int | slice | Circuit | QiskitCircuit):
         if isinstance(index, int | slice):
@@ -435,3 +394,16 @@ class ParallelizerJobBatch:
             except StopIteration as exc:
                 raise LookupError("the given circuit was not found in this job batch") from exc
         raise TypeError(f"'{index}' is not a valid index into a job batch")
+
+    def __iter__(self):
+        return iter(self.jobs)
+
+    def __len__(self):
+        return len(self.jobs)
+
+    def __or__(self, other: "ParallelizerJobBatch"):
+        return ParallelizerJobBatch(
+            self.jobs + other.jobs,
+            self.kwargs | other.kwargs,
+            max(self.sync_wait, other.sync_wait),
+        )

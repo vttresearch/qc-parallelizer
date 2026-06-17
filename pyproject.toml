@@ -1,6 +1,6 @@
 [project]
 name = "qc-parallelizer"
-version = "2.0.1"
+version = "2.1.0"
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
     { name = "Henri Ahola", email = "firstname.lastname@vtt.fi" }
@@ -16,7 +16,7 @@ Notebooks = "https://github.com/vttresearch/qc-parallelizer/tree/main/notebooks"
 
 [project.optional-dependencies]
 tests = [ "iqm-client[qiskit]", "pytest", "pytest-cov" ]
-notebooks = [ "iqm-client[qiskit]", "ipykernel", "matplotlib", "pylatexenc", "ipywidgets" ]
+notebooks = [ "iqm-client[qiskit]", "ipykernel", "matplotlib", "pylatexenc", "ipywidgets", "pennylane" ]
 visualization = [ "matplotlib", "pylatexenc" ]
 
 [build-system]

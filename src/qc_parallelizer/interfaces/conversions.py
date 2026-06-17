@@ -1,3 +1,4 @@
+import itertools
 import typing
 from collections.abc import Sequence
 from numbers import Real
@@ -31,7 +32,7 @@ from qiskit.transpiler import (
     Target as QiskitBackendTarget,
 )
 
-from ..base import InputTypes, Types
+from ..base import Exceptions, InputTypes, Types
 from ..util.typing import ensure_sequence, isnestedinstance
 from . import Backend, Circuit
 
@@ -99,7 +100,7 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
     def result(self):
         exp_results = [
             QiskitExperimentResult(
-                None,
+                self.par_job.kwargs.get("shots", None),
                 True,
                 QiskitExperimentResultData(counts=result.counts),
             )
@@ -171,43 +172,79 @@ class ParallelizedQiskitBackendAdapter(QiskitBackend):
 
     @property
     def target(self):  # type: ignore
-        return build_merged_target(self.backend.remote_backends)
+        return build_merged_target(self.backend.remote_backends, super=True)
 
 
-def build_merged_target(backends: Sequence[Backend]):
+def build_merged_target(backends: Sequence[Backend], super: bool = False):
     """
     Builds a merged targed from several backends. The merged target is a union of all provided
     backends. Since qubits from different backends cannot couple, the resulting coupling map is not
     connected.
 
-    Instructions and their properties are preserved. Only qubit indices ("qargs") are modified.
+    Args:
+        super:
+            If set to True, returns a "super target" where the number of qubits is the largest
+            individual number of qubits in the list of backends, supported gate set is the union of
+            all supported gate sets, and qubits have all-to-all connectivity.
     """
 
-    instructions: dict[
-        str,
-        tuple[QiskitInstruction, dict[tuple[int, ...], QiskitInstructionProperties]],
-    ] = {}
+    if super:
+        num_qubits = max(backend.num_qubits for backend in backends)
 
-    qubit_cumulative_offset = 0
-    for backend in backends:
-        # Qiskit's abstract classes (BackendV2) don't play well with static type checking, so we
-        # have to hold the type checker's hand here.
-        assert backend.target is not None
-        for instruction, qargs in typing.cast(
-            Sequence[tuple[QiskitInstruction, tuple[int, ...]]],
-            backend.target.instructions,
-        ):
-            # The Instruction class is not hashable, so we use its repr instead.
-            key = repr(instruction)
-            if key not in instructions:
-                instructions[key] = (instruction, {})
-            _, props = instructions[key]
-            shifted_qargs = tuple(q + qubit_cumulative_offset for q in qargs)
-            props[shifted_qargs] = backend.target[instruction.name][qargs]
-        qubit_cumulative_offset += backend.num_qubits
+        unique_instructions: dict[str, QiskitInstruction] = {}
+        for backend in backends:
+            for instr, locus in backend.target.instructions:
+                if not locus:
+                    continue
+                unique_instructions[instr.name] = instr
 
-    target = QiskitBackendTarget()
-    for instruction, qargs in instructions.values():
-        target.add_instruction(instruction, qargs)
+        target = QiskitBackendTarget(num_qubits=num_qubits)
 
-    return target
+        for instruction in unique_instructions.values():
+            props = {
+                locus: None
+                # This generates all possible n-tuples (n = number of qubits) of qubit indices.
+                for locus in itertools.product(
+                    *[range(num_qubits) for _ in range(instruction.num_qubits)],
+                )
+                if len(locus) == len(set(locus))  # And this excludes duplicate indices.
+            }
+            target.add_instruction(instruction, props)
+
+        return target
+
+    else:
+        instructions: dict[
+            str,
+            tuple[QiskitInstruction, dict[tuple[int, ...], QiskitInstructionProperties]],
+        ] = {}
+
+        qubit_cumulative_offset = 0
+        for backend in backends:
+            # Qiskit's abstract classes (BackendV2) don't play well with static type checking, so we
+            # have to hold the type checker's hand here.
+            assert backend.target is not None
+            for instruction, qargs in typing.cast(
+                Sequence[tuple[QiskitInstruction, tuple[int, ...]]],
+                backend.target.instructions,
+            ):
+                if qargs is None:
+                    # As of iqm-client 34.0.3, there is an "if-else" operation that has no defined
+                    # qubit arguments. This check discards that operation.
+                    continue
+
+                # The Instruction class is not hashable, so we use its repr instead.
+                key = repr(instruction)
+                if key not in instructions:
+                    instructions[key] = (instruction, {})
+                _, props = instructions[key]
+                shifted_qargs = tuple(q + qubit_cumulative_offset for q in qargs)
+                props[shifted_qargs] = backend.target[instruction.name][qargs]
+            qubit_cumulative_offset += backend.num_qubits
+
+        target = QiskitBackendTarget()
+
+        for instruction, qargs in instructions.values():
+            target.add_instruction(instruction, qargs)
+
+        return target

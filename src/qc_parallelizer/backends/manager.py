@@ -1,5 +1,6 @@
 import collections
 import threading
+import time
 import typing
 from collections.abc import Sequence
 from typing import Any
@@ -25,11 +26,9 @@ class ManagedBackend:
 
 
 class BackendManager:
-    lock: threading.Lock
-
     def __init__(self):
         self.remote_backends: dict[Backend, ManagedBackend] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def register(self, backends: Sequence[Backend]):
         as_set = set(backends)
@@ -82,40 +81,60 @@ class BackendManager:
         circuits, and launching threads to collect results after jobs complete.
         """
 
-        ready_bins = (
-            bin
-            for bin in self.bins
-            if bin.size > 0
-            if any(job.completion_requested for job in bin) or (bin.is_full and auto_exec)
-        )
-
-        for bin in ready_bins:
-            self[bin.backend].bins.remove(bin)
-            host_circuit = bin.to_circuit()
-
-            Log.info(
-                (
-                    f"Submitting job to backend |'{bin.backend.name}'| (|{bin.backend}| --> "
-                    f"|{bin.backend.unwrap()}|)..."
-                ),
+        with self.lock:
+            ready_bins = (
+                bin
+                for bin in self.bins
+                if bin.size > 0
+                if any(job.completion_requested for job in bin) or (bin.is_full and auto_exec)
             )
-            Log.debug(lambda: f"Job kwargs: {bin.kwargs}")
-            Log.debug(lambda: f"Circuit:\n{host_circuit.draw(fold=-1, idle_wires=False)}")
 
-            remote_job = bin.backend.run(
-                host_circuit,
-                **bin.kwargs,
-                callback=lambda job, result, bin=bin: self._remote_job_completed(
-                    job,
-                    result,
-                    bin,
-                ),
-            )
-            Log.info(f"![JOB SUBMITTED] Job submitted with id |'{remote_job.job_id()}'|.")
+            for bin in ready_bins:
+                if Log.level.value >= Log.LogLevel.DBUG.value:
+                    requested = any(job.completion_requested for job in bin)
+                    full = bin.is_full and auto_exec
+                    reason = " and ".join(
+                        (
+                            *(["requested"] if requested else []),
+                            *(["full"] if full else []),
+                        ),
+                    )
+                    Log.debug(f"Found |{reason}| bin.")
 
-            for job in bin:
-                job.mark_submitted(bin.backend, remote_job)
-            self[bin.backend].num_runs += 1
+                self[bin.backend].bins.remove(bin)
+                host_circuit = bin.to_circuit()
+
+                Log.info(
+                    (
+                        f"Submitting job to backend |'{bin.backend.name}'| (|{bin.backend}| --> "
+                        f"|{bin.backend.unwrap()}|)..."
+                    ),
+                )
+                Log.debug(lambda: f"Job kwargs: {bin.kwargs}")
+                Log.debug(
+                    lambda: (
+                        f"Circuit (${host_circuit.num_qubits} qubit$):\n"
+                        f"{host_circuit.draw(fold=-1, idle_wires=False)}"
+                    ),
+                )
+
+                submission_time = time.time()
+                remote_job = bin.backend.run(
+                    host_circuit,
+                    **bin.kwargs,
+                    wait_for_job=True,
+                    callback=lambda job, result, bin=bin: self._remote_job_completed(
+                        job,
+                        result,
+                        bin,
+                    ),
+                )
+                assert remote_job is not None
+                Log.info(f"![JOB SUBMITTED] Job submitted with id |'{remote_job.job_id()}'|.")
+
+                for job in bin:
+                    job.mark_submitted(bin.backend, remote_job, at_time=submission_time)
+                self[bin.backend].num_runs += 1
 
     def _remote_job_completed(
         self,
@@ -123,11 +142,12 @@ class BackendManager:
         result: QiskitJobResult,
         bin: BackendCircuitBin,
     ):
+        completion_time = time.time()
         Log.info(f"![JOB COMPLETE] Job |'{remote_job.job_id()}'| completed!")
         if sum(len(cregs) for cregs in bin.cregs.values()) == 0:
             Log.info("Job has no cregs and thus no results to retrieve.")
             for job in bin:
-                job.mark_completed({})
+                job.mark_completed({}, at_time=completion_time)
             return
 
         counts = typing.cast(dict[str, int], result.get_counts())
@@ -186,7 +206,7 @@ class BackendManager:
                 split_counts[job][bitstring[bounds]] += count
 
         for job in bin:
-            job.mark_completed(dict(split_counts[job]))
+            job.mark_completed(dict(split_counts[job]), at_time=completion_time)
 
     def __getitem__(self, backend: Backend):
         return self.remote_backends[backend]

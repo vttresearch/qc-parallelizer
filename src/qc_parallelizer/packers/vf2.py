@@ -3,6 +3,8 @@ A collection of packers that utilize the VF2++ layout algorithm.
 """
 
 import heapq
+import json
+import tempfile
 import time
 from typing import Any
 
@@ -24,7 +26,7 @@ class VF2Base(PackerBase):
             id_order:
                 If True, qubits are considered in order by their index. If set to False, a
                 heuristic order is used instead. See the
-                [VF2++ paper](https://www.sciencedirect.com/science/article/pii/S0166218X18300829)
+                [VF2++ paper](https://doi.org/10.1016/j.dam.2018.02.018)
                 for more details.
             call_limit:
                 Sets a limit on the number of states that the VF2++ algorithm is allowed to
@@ -37,18 +39,28 @@ class VF2Base(PackerBase):
     def layout_generator(self, bin: BackendCircuitBin, circuit: Circuit, blocked: set[int]):
         phys = rustworkx.PyGraph(multigraph=False)
         phys.add_nodes_from(range(bin.backend.num_qubits))
-        phys.add_edges_from_no_data(list(bin.backend.edges_bidir))
+        phys.add_edges_from_no_data(list(bin.backend.edges))
         virt = rustworkx.PyGraph(multigraph=False)
         virt.add_nodes_from(range(circuit.num_qubits))
-        virt.add_edges_from_no_data(list(circuit.get_edges(bidir=True)))
+        virt.add_edges_from_no_data(list(circuit.get_edges(bidir=False)))
 
-        Log.debug(
-            lambda: (
-                f"Generated ${phys.num_nodes()} node$ and ${phys.num_edges()} edge$ for "
-                f"physical graph, and ${virt.num_nodes()} node$ and ${virt.num_edges()} edge$ "
-                f"for virtual graph."
-            ),
-        )
+        if Log.level.value >= Log.LogLevel.DBUG.value:
+            Log.debug(
+                (
+                    f"Generated ${phys.num_nodes()} node$ and ${phys.num_edges()} edge$ for "
+                    f"physical graph, and ${virt.num_nodes()} node$ and ${virt.num_edges()} edge$ "
+                    f"for virtual graph. There are ${len(blocked)} blocked qubit$, and the layout "
+                    f"has ${circuit.layout.size} entry$:"
+                ),
+            )
+            Log.debug(str(circuit.layout))
+
+            phys_json = rustworkx.node_link_json(phys)
+            virt_json = rustworkx.node_link_json(virt)
+            file = tempfile.NamedTemporaryFile(mode="w", delete=False)
+            file.write(json.dumps(dict(phys=phys_json, virt=virt_json)))
+            file.close()
+            Log.debug(f"Wrote graphs to |{file.name}|.")
 
         def matcher(p, v) -> bool:
             if p in blocked:
@@ -62,12 +74,15 @@ class VF2Base(PackerBase):
             virt,
             node_matcher=matcher,
             subgraph=True,
-            induced=self.min_intra_distance != 0,
+            induced=(induced := (self.min_intra_distance != 0)),
             call_limit=self.call_limit,
             id_order=self.id_order,
         )
 
-        Log.debug(f"VF2++ generator created with `id_order` = |{self.id_order}|.")
+        Log.debug(
+            f"VF2++ generator created with `id_order` = |{self.id_order}| and `induced` = "
+            f"|{induced}|.",
+        )
 
         return (dict(mapping) for mapping in mapping_generator)
 
@@ -125,7 +140,7 @@ class Minimizing(VF2Base):
             if i > 0 and i & 0x3FFF == 0:
                 Log.debug(
                     (
-                        f"Discovered ${len(solution_heap)} options$ with leading score "
+                        f"Discovered ${len(solution_heap)} option$ with leading score "
                         f"|{-solution_heap[0][0]}|."
                     ),
                 )

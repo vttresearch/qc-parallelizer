@@ -21,6 +21,12 @@ This folder contains example notebooks for demonstration and documentation purpo
   A list and documentation of circuit packers. Packers control the physical placement of circuits,
   considering the backend's topology and positioning relative to other circuits.
 
+## Application-specific
+
+- **[PennyLane](./pennylane.ipynb)**
+
+  A simple demonstration of computing expectation values in parallel with PennyLane.
+
 ## Other examples
 
 - **[Ring packing](./ring-packing.ipynb)**
