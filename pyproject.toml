@@ -1,6 +1,6 @@
 [project]
 name = "qc-parallelizer"
-version = "2.1.0"
+version = "2.1.1"
 description = "A module for optimally combining and distributing quantum circuits"
 authors = [
     { name = "Henri Ahola", email = "firstname.lastname@vtt.fi" }
@@ -30,7 +30,7 @@ version_scheme = "no-guess-dev"
 [tool.ruff]
 line-length = 100
 indent-width = 4
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [ "F", "E", "W", "I001", "I002" ]
