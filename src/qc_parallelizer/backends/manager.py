@@ -86,7 +86,8 @@ class BackendManager:
                 bin
                 for bin in self.bins
                 if bin.size > 0
-                if any(job.completion_requested for job in bin) or (bin.is_full and auto_exec)
+                if (any(job.completion_requested for job in bin) or (bin.is_full and auto_exec))
+                and not all(job.cancelled for job in bin)
             )
 
             for bin in ready_bins:

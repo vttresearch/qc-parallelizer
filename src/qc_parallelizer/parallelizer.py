@@ -164,6 +164,14 @@ class ParallelizedBackend:
 
         return events
 
+    def cancel_all(self):
+        """
+        Cancels all submitted jobs.
+        """
+
+        for batch in self.history:
+            batch.cancel()
+
     def __enter__(self):
         return self
 

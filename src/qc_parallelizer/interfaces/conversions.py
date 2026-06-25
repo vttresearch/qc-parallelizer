@@ -115,8 +115,7 @@ class ParallelizedQiskitJobAdapter(QiskitJob):
         )
 
     def cancel(self):
-        # TODO? Cancelling jobs that have not been submitted yet is easy, otherwise not sure.
-        raise NotImplementedError
+        self.par_job.cancel()
 
     def status(self):
         if self.par_job.is_ready:

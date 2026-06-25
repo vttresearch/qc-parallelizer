@@ -96,6 +96,7 @@ class ParallelizerJob:
         self.bin: BackendCircuitBin | None = None
         self.completion_requested: bool = False
         self.completed = threading.Event()
+        self.cancelled: bool = False
         self.remote_job: QiskitJob | None = None
         self.remote_backend: Backend | None = None
         self.counts: dict[str, int] | None = None
@@ -212,6 +213,14 @@ class ParallelizerJob:
     @property
     def metadata(self):
         return self.circuit.metadata
+
+    def cancel(self):
+        if self.is_ready:
+            return
+        self.cancelled = True
+        if self.remote_job is not None:
+            self.remote_job.cancel()
+        # TODO: remove from bin if the job has not been submitted yet?
 
     def request_completion(self):
         """
@@ -374,6 +383,10 @@ class ParallelizerJobBatch:
             job: job.remote_job.job_id() if job.remote_job is not None else None
             for job in self.jobs
         }
+
+    def cancel(self):
+        for job in self.jobs:
+            job.cancel()
 
     def draw(self, *args, **kwargs):
         """
