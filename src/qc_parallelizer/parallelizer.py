@@ -122,48 +122,6 @@ class ParallelizedBackend:
             optimization_level=self.parent.translation_kwargs.get("optimization_level", 1),
         )
 
-    @property
-    def timeline(self):
-        """
-        A dict of ordered sequences of jobs on each available backend. Together, these form the
-        "timeline" of executed jobs or job batches.
-
-        The return value might look like this:
-        ```
-        {
-            <backend 1>: [(timing, job), (timing, job), ...],
-            <backend 2>: [(timing, job), ...],
-            None: [(partial timing, job), ...]
-        }
-        ```
-        where `timing` is a 5-tuple of creation, placement, submission, completion and completion
-        request timestamps. Each key of the dictionary corresponds to a backend, with the exception
-        of `None`, which represents jobs that have not been assigned a backend yet.
-
-        This can be visualized with `qc_parallelizer.util.visualization.plot_timeline`.
-        """
-
-        events: dict[
-            Backend | None,
-            list[
-                tuple[
-                    tuple[float, float | None, float | None, float | None, float | None],
-                    ParallelizerJob,
-                ]
-            ],
-        ] = {backend: [] for backend in self.remote_backends} | {None: []}
-        for batch in self.history:
-            for job in batch:
-                point = job.timing.as_tuple, job
-                if job.remote_backend is not None:
-                    events[job.remote_backend].append(point)
-                else:
-                    events[None].append(point)
-        for k in events:
-            events[k] = sorted(events[k], key=lambda ev: ev[0])
-
-        return events
-
     def cancel_all(self):
         """
         Cancels all submitted jobs.

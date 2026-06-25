@@ -1,21 +1,24 @@
 import itertools
 import typing
+from collections.abc import Sequence
 from datetime import datetime
 
 if typing.TYPE_CHECKING:
     from ..backends import BackendCircuitBin
     from ..jobs import ParallelizerJobBatch
+    from ..parallelizer import ParallelizedBackend
 
 
-def plot_timeline(
-    timeline: dict,
+def plot_history(
+    history: Sequence["ParallelizerJobBatch"] | "ParallelizedBackend",
     collapse_ratio: float | None = 0.2,
-    figsize: tuple[float, float] = (16, 6),
     min_duration: float = 0.0,
+    figsize: tuple[float, float] = (16, 6),
 ):
     """
-    Plots a parallelization timeline, as returned by `ParallelizedBackend.timeline`. Requires
-    Matplotlib to be installed.
+    Plots parallelization history, as returned by `ParallelizedBackend.history`. as a timeline. The
+    parallelized backend itself can also be passed to this function. Requires Matplotlib to be
+    installed.
 
     Args:
         collapse_ratio:
@@ -38,13 +41,14 @@ def plot_timeline(
     except ImportError as exc:
         raise RuntimeError("missing optional dependencies") from exc
 
-    request_times = [
-        (req, job) for events in timeline.values() for (*_, req), job in events if req is not None
-    ]
+    if not isinstance(history, Sequence):
+        history = history.history
+    jobs = [job for batch in history for job in batch]
 
-    all_times = sorted(
-        [t for events in timeline.values() for times, _ in events for t in times if t is not None],
-    )
+    request_times = [
+        (job.timing.requested, job) for job in jobs if job.timing.requested is not None
+    ]
+    all_times = sorted([t for job in jobs for t in job.timing.as_tuple if t is not None])
     min_time, max_time = all_times[0], all_times[-1]
     total_time_window = max_time - min_time
 
@@ -59,27 +63,22 @@ def plot_timeline(
 
     track_keys = [
         "prep",
-        *(
-            job.bin.backend
-            for events in timeline.values()
-            for _, job in events
-            if job.bin is not None
-        ),
+        *(job.bin.backend for job in jobs if job.bin is not None),
     ]
     boxes = {k: [] for k in track_keys}
-    for events in timeline.values():
-        if len(events) == 0:
-            continue
-        for (a, b, c, d, _), job in events:
-            preparation = a, b
-            waiting = b, c
-            executing = c, d
-            if None not in preparation:
-                boxes["prep"].append((preparation, (job, False)))
-            if None not in waiting:
-                boxes[job.bin.backend].append((waiting, (job, True)))
-            if None not in executing:
-                boxes[job.bin.backend].append((executing, (job, False)))
+    for job in jobs:
+        a, b, c, d, _ = job.timing.as_tuple
+        preparation = a, b
+        waiting = b, c
+        executing = c, d
+        if None not in preparation:
+            boxes["prep"].append((preparation, (job, False)))
+        if None not in waiting:
+            assert job.bin is not None
+            boxes[job.bin.backend].append((waiting, (job, True)))
+        if None not in executing:
+            assert job.bin is not None
+            boxes[job.bin.backend].append((executing, (job, False)))
 
     # Then, rearrange each track so that overlapping boxes are positioned in parallel instead of on
     # top of each other.
